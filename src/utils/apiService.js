@@ -78,7 +78,7 @@ export const transcribeAudioWithGroq = async (audioBlob) => {
     const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer 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`, 
+        "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`, 
       },
       body: formData
     });
