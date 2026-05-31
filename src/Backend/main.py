@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 import PyPDF2
 from google import genai
@@ -158,7 +158,8 @@ async def generate_pertanyaan(file: UploadFile = File(...)):
         return {
             "status": "success",
             "message": "Pertanyaan berhasil dibuat.",
-            "questions": daftar_pertanyaan
+            "questions": daftar_pertanyaan,
+            "full_text": teks_skripsi_mentah 
         }
 
     except Exception as e:
@@ -166,13 +167,126 @@ async def generate_pertanyaan(file: UploadFile = File(...)):
         print("Teks mentah dari AI:", jawaban_teks)
         raise HTTPException(status_code=500, detail="Format balasan dari AI tidak sesuai.")
 
-    return {
+
+# =========================================================
+# ENDPOINT BARU: EVALUASI JAWABAN QNA (FEEDBACK NATURAL)
+# =========================================================
+@app.post("/api/evaluasi-qna")
+async def evaluasi_qna(
+    pertanyaan_1: str = Form(""),
+    jawaban_1: str = Form(""),
+    pertanyaan_2: str = Form(""),
+    jawaban_2: str = Form(""),
+    pertanyaan_3: str = Form(""),
+    jawaban_3: str = Form("")
+):
+    # Validasi awal: Jika tidak ada jawaban sama sekali, tolak
+    if not jawaban_1 and not jawaban_2 and not jawaban_3:
+        raise HTTPException(status_code=400, detail="Tidak ada jawaban yang dikirim.")
+
+    prompt = f"""
+    Anda adalah seorang Dosen Penguji Sidang Skripsi yang ahli, berwibawa, dan suportif.
+    Tugas Anda adalah memvalidasi dan memberikan feedback atas 3 jawaban mahasiswa saat sesi tanya jawab (QnA).
+    Berikan feedback selayaknya dosen yang sedang menasihati mahasiswanya secara langsung secara lisan (gunakan bahasa yang natural, mengalir, tidak kaku seperti robot, namun tetap akademis).
+    
+    Evaluasi data presentasi/tanya jawab berikut:
+    [Pertanyaan 1]: {pertanyaan_1}
+    [Jawaban Mahasiswa 1]: {jawaban_1}
+    
+    [Pertanyaan 2]: {pertanyaan_2}
+    [Jawaban Mahasiswa 2]: {jawaban_2}
+    
+    [Pertanyaan 3]: {pertanyaan_3}
+    [Jawaban Mahasiswa 3]: {jawaban_3}
+
+    Kembalikan hasil HANYA dalam format JSON persis seperti struktur ini (tanpa markdown tambahan seperti ```json):
+    {{
+      "qna_summary": {{
+        "skor_rata_rata": 85,
+        "keunggulan": [
+          "Poin keunggulan 1 dengan bahasa luwes (misal: 'Pemahaman teorimu di bagian X sudah sangat tajam.')", 
+          "Poin keunggulan 2"
+        ],
+        "kelemahan": [
+          "Poin kelemahan 1 yang konstruktif (misal: 'Sayangnya, kamu agak kehilangan fokus waktu menjelaskan Y.')", 
+          "Poin kelemahan 2"
+        ],
+        "strategi": [
+          "Saran perbaikan aplikatif (misal: 'Coba pelajari lagi referensi Z agar jawabanmu lebih solid.')", 
+          "Saran perbaikan 2"
+        ]
+      }},
+      "evaluasi_qna": [
+        {{
+          "soal": "Tulis ulang intisari pertanyaan 1 secara singkat",
+          "status": "Benar / Kurang Tepat / Salah",
+          "feedback": "Berikan 1-2 kalimat feedback selayaknya dosen berbicara langsung. Contoh: 'Jawaban kamu untuk pertanyaan ini sebenarnya sudah mengarah ke hal yang benar, tapi alangkah baiknya jika kamu tambahkan contoh kasusnya biar saya lebih yakin.'"
+        }},
+        {{
+          "soal": "Tulis ulang intisari pertanyaan 2 secara singkat",
+          "status": "Benar / Kurang Tepat / Salah",
+          "feedback": "Berikan 1-2 kalimat feedback selayaknya dosen berbicara langsung."
+        }},
+        {{
+          "soal": "Tulis ulang intisari pertanyaan 3 secara singkat",
+          "status": "Benar / Kurang Tepat / Salah",
+          "feedback": "Berikan 1-2 kalimat feedback selayaknya dosen berbicara langsung."
+        }}
+      ]
+    }}
+    Catatan Penting: 
+    - Isi 'skor_rata_rata' dengan angka integer 0-100 (Berdasarkan ketepatan dan rasionalitas jawaban).
+    - JANGAN PERNAH menyertakan teks apapun di luar JSON.
+    """
+
+    models_to_try = [
+        "gemini-2.0-flash", 
+        "gemini-2.5-flash", 
+        "gemini-1.5-pro", 
+        "gemini-1.5-flash"
+    ]
+    
+    jawaban_teks = None
+
+    print("\nMeminta evaluasi QnA ke Gemini...")
+
+    for nama_model in models_to_try:
+        try:
+            print(f"Mencoba model untuk evaluasi: {nama_model}...")
+            response = client.models.generate_content(
+                model=nama_model,
+                contents=prompt,
+            )
+            jawaban_teks = response.text.strip()
+            print(f"✅ Berhasil mendapatkan evaluasi dari {nama_model}!")
+            break 
+        except Exception as e:
+            print(f"[-] Gagal evaluasi pakai {nama_model}: {e}")
+
+    if not jawaban_teks:
+        raise HTTPException(status_code=500, detail="Gagal terhubung ke AI untuk evaluasi.")
+
+    # Parsing JSON Evaluasi dari Gemini
+    try:
+        # Bersihkan spasi atau baris kosong di awal/akhir
+        jawaban_teks = jawaban_teks.strip()
+        
+        # Ekstraksi paksa jika Gemini memberikan bungkus ```json atau ```
+        if "```json" in jawaban_teks:
+            jawaban_teks = jawaban_teks.split("```json")[1].split("```")[0].strip()
+        elif "```" in jawaban_teks:
+            jawaban_teks = jawaban_teks.split("```")[1].split("```")[0].strip()
+
+        # Konversi string teks ke Object JSON Python
+        hasil_evaluasi = json.loads(jawaban_teks)
+        
+        return {
             "status": "success",
-            "message": "Pertanyaan berhasil dibuat.",
-            "questions": daftar_pertanyaan,
-            "full_text": teks_skripsi_mentah  # <--- Tambahkan baris ini!
+            "message": "Evaluasi berhasil diselesaikan.",
+            "data": hasil_evaluasi
         }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    except Exception as e:
+        print("Error System Parsing JSON Evaluasi:", e)
+        print("Teks mentah dari AI yang bikin crash:", jawaban_teks)
+        raise HTTPException(status_code=500, detail=f"Format balasan evaluasi dari AI tidak sesuai: {str(e)}")

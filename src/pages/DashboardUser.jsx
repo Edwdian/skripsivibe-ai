@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom"; // <-- IMPORT REACT ROUTER
+import { useNavigate } from "react-router-dom";
 
 import { saveSimulation, getUserSimulations } from "../services/apiSimulations.js";
 
@@ -22,33 +22,51 @@ import {
 import { auth } from "../firebase/config.js";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 
-// IMPORT FUNGSI API
-import { fetchQuestionsFromPDF } from "../utils/apiService"; 
+import { fetchQuestionsFromPDF } from "../utils/apiService";
 
 export default function DashboardUser() {
-  const navigate = useNavigate(); // <-- INISIALISASI NAVIGATE
+  const navigate = useNavigate();
 
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [simulations, setSimulations] = useState([]);
 
   const [user, setUser] = useState(auth.currentUser);
-  const userName = user?.displayName ;
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [loading, setLoading] = useState(!auth.currentUser);
+  const userName = user?.displayName || "User";
 
   const initials = userName
-      ?.split(" ")
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) || "U";
+    ?.split(" ")
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "U";
+
+  // ✅ Cek login + redirect kalau belum login/verified
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser || !currentUser.emailVerified) {
+        navigate("/auth", { replace: true });
+        return;
+      }
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  // ✅ Ambil data simulasi dari Firestore
+  useEffect(() => {
+    const fetchData = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const data = await getUserSimulations(currentUser.uid);
+      setSimulations(data);
+    };
+    fetchData();
+  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -60,69 +78,56 @@ export default function DashboardUser() {
   };
 
   const handleStartSimulation = async () => {
-      if (!selectedFile) return;
-      setIsUploading(true);
+    if (!selectedFile) return;
+    setIsUploading(true);
 
-      try {
-        const data = await fetchQuestionsFromPDF(selectedFile);
+    try {
+      const data = await fetchQuestionsFromPDF(selectedFile);
 
-        if (data.questions && data.questions.length > 0) {
+      if (data.questions && data.questions.length > 0) {
 
-          await saveSimulation({
-            uid: user.uid,
-            judul: selectedFile.name,
-            nilai: "-",
-            feedback: "Simulasi dimulai",
-            mode: "AI Killer",
-          });
-          
-          // 1. TITIPKAN FILE ASLI KE MEMORI WINDOW
-          window.fileSkripsiTitipan = selectedFile; 
+        await saveSimulation({
+          uid: user.uid,
+          judul: selectedFile.name,
+          nilai: "-",
+          feedback: "Simulasi dimulai",
+          mode: "AI Killer",
+        });
 
-          // 2. PINDAH HALAMAN HANYA BAWA DATA PERTANYAAN
-          navigate("/dashboard-ujian", {
-            state: {
-              pertanyaan: data.questions
-            }
-          });
+        window.fileSkripsiTitipan = selectedFile;
+        navigate("/dashboard-ujian", {
+          state: { pertanyaan: data.questions }
+        });
 
-        } else {
-          alert("Gagal mendapatkan pertanyaan dari PDF.");
-          setIsUploading(false);
-        }
-      } catch (error) {
-        console.error("Error saat generate pertanyaan:", error);
-        alert("Gagal memproses draft skripsi. Pastikan server API lokal berjalan.");
+      } else {
+        alert("Gagal mendapatkan pertanyaan dari PDF.");
         setIsUploading(false);
       }
-    };
+    } catch (error) {
+      console.error("Error saat generate pertanyaan:", error);
+      alert("Gagal memproses draft skripsi. Pastikan server API lokal berjalan.");
+      setIsUploading(false);
+    }
+  };
 
   const handleLogout = async () => {
     const confirmLogout = window.confirm("Apakah Anda yakin ingin logout?");
     if (!confirmLogout) return;
-
     try {
       await signOut(auth);
-      navigate("/"); // Gunakan navigate juga untuk ke halaman utama
+      navigate("/");
     } catch (error) {
       alert("Gagal logout");
     }
   };
 
-  const [simulations, setSimulations] = useState([]);
-  useEffect(() => {
-    const fetchData = async () => {
-      const user = auth.currentUser;
-
-      if (!user) return;
-
-      const data = await getUserSimulations(user.uid);
-
-      setSimulations(data);
-    };
-
-    fetchData();
-  }, []);
+  // ✅ Tampilkan spinner saat loading auth
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center"
+      style={{ background: "linear-gradient(160deg, #eef7ff 0%, #dceeff 25%, #cfe7ff 55%, #edf7ff 100%)" }}>
+      <div className="w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="min-h-screen text-slate-800 flex overflow-hidden relative font-sans" style={{ background: 'linear-gradient(160deg, #eef7ff 0%, #dceeff 25%, #cfe7ff 55%, #edf7ff 100%)' }}>
@@ -220,6 +225,7 @@ export default function DashboardUser() {
               <span className="text-sm text-slate-500 font-semibold">AI Sistem Active</span>
             </div>
           </header>
+
           <section className="relative rounded-3xl p-8 overflow-hidden bg-white/75 backdrop-blur-2xl border border-blue-100/80 shadow-[0_12px_32px_rgba(15,23,42,0.08),0_4px_12px_rgba(59,130,246,0.08)]">
             <div className="absolute top-[-40px] right-[-40px] w-72 h-72 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(191,219,254,0.18) 0%, transparent 72%)' }}></div>
             <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
@@ -235,8 +241,7 @@ export default function DashboardUser() {
               </button>
             </div>
           </section>
-          
-          {/* STATS */}
+
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="dash-stat rounded-2xl p-6">
               <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center mb-4">
@@ -261,7 +266,6 @@ export default function DashboardUser() {
             </div>
           </section>
 
-          {/* HISTORY */}
           <section>
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-slate-800">Riwayat Simulasi</h3>

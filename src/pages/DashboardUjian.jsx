@@ -7,12 +7,14 @@ import {
   CameraOff,
   Loader2,
   Volume2,
-  MessageSquare,
   Maximize,
-  CheckCircle2
+  CheckCircle2,
+  MessageSquare,
+  Sparkles
 } from "lucide-react";
 
-import { sendToRenderModel, transcribeAudioWithGroq } from '../utils/apiService';
+// Import API Call dari apiService
+import { sendToRenderModel, transcribeAudioWithGroq, evaluateQna } from '../utils/apiService';
 
 const AI_VIDEOS = {
   pembukaan: "https://res.cloudinary.com/doabehyrn/video/upload/v1778742813/Pembukaan_yuntgk.mp4",
@@ -43,10 +45,14 @@ export default function DashboardUjian() {
     jawaban_3: ""
   });
 
+  // Ref untuk Persistent Stream (Mikrofon tetap nyala mencegah delay inisialisasi)
+  const micStreamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
+  const recognitionRef = useRef(null); 
   const audioChunksRef = useRef([]);
+
   const [isProcessingAudio, setIsProcessingAudio] = useState(false); 
-  const [isEvaluating, setIsEvaluating] = useState(false); // State Loading untuk pindah ke Hasil
+  const [isEvaluating, setIsEvaluating] = useState(false); 
   const currentPhaseRef = useRef(""); 
 
   const [activeVideo, setActiveVideo] = useState(null); 
@@ -57,9 +63,9 @@ export default function DashboardUjian() {
   const shouldListen = useRef(false);
   const videoRef = useRef(null);
 
-  // =========================
-  // TANGKAP DATA & OTOMATIS MULAI
-  // =========================
+  // =========================================================
+  // 1. INISIALISASI DATA & AKSES MIKROFON SEJAK AWAL (SINGLE LIFECYCLE)
+  // =========================================================
   useEffect(() => {
     const fileDariUser = window.fileSkripsiTitipan;
     const pertanyaanDariUser = location.state?.pertanyaan;
@@ -68,14 +74,31 @@ export default function DashboardUjian() {
       setSelectedFile(fileDariUser);
       setGeneratedQuestions(pertanyaanDariUser);
       
+      // Ambil akses mikrofon sejak awal halaman diload
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((stream) => {
+          micStreamRef.current = stream;
+          setPhase("intro"); 
+        })
+        .catch((err) => {
+          console.error("Gagal mendapatkan akses mikrofon sejak awal:", err);
+          alert("Aplikasi membutuhkan izin mikrofon yang aktif agar dapat melakukan transkripsi.");
+          navigate("/dashboard-user");
+        });
+
       const unlockAudio = new Audio();
       unlockAudio.play().catch(() => {});
-
-      setPhase("intro"); 
     } else {
       alert("Data skripsi tidak ditemukan. Silakan upload terlebih dahulu.");
       navigate("/dashboard-user"); 
     }
+
+    // Cleanup seluruh stream mikrofon saat meninggalkan dashboard
+    return () => {
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
   }, [location, navigate]);
 
   // =========================
@@ -99,9 +122,9 @@ export default function DashboardUjian() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // =========================
-  // LOGIKA ALUR FASE
-  // =========================
+  // =========================================================
+  // 2. LOGIKA ALUR FASE (MANAJEMEN VIDEO & PEMANGGILAN EVALUASI)
+  // =========================================================
   useEffect(() => {
     if (phase === 'loading_data') return;
 
@@ -147,15 +170,27 @@ export default function DashboardUjian() {
         break;
       case 'finished':
         nextVideo = 'mendengarkan'; 
-        setIsEvaluating(true); // Memunculkan layar loading UI
+        setIsEvaluating(true); 
         
-        sendToRenderModel(selectedFile, dataLengkap)
-          .then(hasil => {
+        // Kirim data hasil & total akumulasi durasi waktu pengerjaan
+        Promise.all([
+          sendToRenderModel(selectedFile, dataLengkap), 
+          evaluateQna(dataLengkap, generatedQuestions)  
+        ])
+          .then(([hasilPrediksi, hasilQna]) => {
             setIsEvaluating(false);
-            navigate("/dashboard-hasil", { state: { hasilAI: hasil, transkrip: dataLengkap } });
+            navigate("/dashboard-hasil", { 
+              state: { 
+                hasilAI: hasilPrediksi, 
+                hasilQna: hasilQna,     
+                transkrip: dataLengkap,
+                durasiTotal: time // 🚀 KITA KIRIMKAN TOTAL DURASI DALAM DETIK!
+              } 
+            });
           })
           .catch(err => {
             setIsEvaluating(false);
+            console.error("Error Evaluasi API:", err);
             alert("Yah, gagal mengirim data evaluasi ke server AI.");
           });
         break;
@@ -173,7 +208,6 @@ export default function DashboardUjian() {
     if (activeVideo && videoRefs.current[activeVideo]) {
       const playPromise = videoRefs.current[activeVideo].play();
       if (playPromise !== undefined) {
-        // Hilangkan console.log untuk versi produksi
         playPromise.catch(e => {}); 
       }
 
@@ -191,24 +225,27 @@ export default function DashboardUjian() {
   const handleVideoEnded = (vidKey) => {
     if (vidKey !== activeVideo) return;
     
-    // Auto transisi saat video selesai
     if (phase === 'intro') setPhase('presentation'); 
     else if (phase === 'time_up') setPhase('qna_1_ask'); 
     else if (phase === 'transisi_manual') setPhase('qna_1_ask'); 
     else if (phase === 'closing_video') setPhase('finished'); 
   };
 
-  // =========================
-  // TIMER PRESENTASI
-  // =========================
+  // =========================================================
+  // 3. TIMER TOTAL AKUMULATIF (PRESENTASI + TANYA JAWAB TERUS BERLANJUT)
+  // =========================================================
   useEffect(() => {
     let timer;
-    if (phase === 'presentation') {
-      if (time < 600) timer = setInterval(() => setTime((prev) => prev + 1), 1000);
-      else if (time >= 600) setPhase('time_up');
+    const activePhases = [
+      'presentation', 'transisi_manual', 'time_up', 
+      'qna_1_ask', 'answering_1', 'qna_2_ask', 'answering_2', 'qna_3_ask', 'answering_3'
+    ];
+
+    if (activePhases.includes(phase)) {
+      timer = setInterval(() => setTime((prev) => prev + 1), 1000);
     }
     return () => clearInterval(timer);
-  }, [phase, time]);
+  }, [phase]);
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -216,59 +253,83 @@ export default function DashboardUjian() {
     return `${m}:${s}`;
   };
 
-  // =========================
-  // ARSITEKTUR HYBRID: GROQ + WEB SPEECH TRIGGER
-  // =========================
+  // =========================================================
+  // 4. TRIGGER MANUAL SELESAI (TANGKAP AUDIO VERBATIM INSTAN)
+  // =========================================================
+  const handleManualNextPhase = () => {
+    shouldListen.current = false;
+    
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch(e) {}
+    }
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop(); 
+    }
+    
+    setUserTranscript("Memproses transkripsi...");
+  };
+
+  // =========================================================
+  // 5. HYBRID RECORDING LOGIC (MENGGUNAKAN PERSISTENT STREAM)
+  // =========================================================
   useEffect(() => {
     currentPhaseRef.current = phase; 
     let recognition = null;
     const isUserTurn = phase === 'presentation' || phase.startsWith('answering_');
     shouldListen.current = isUserTurn && isMicOn && !isAiSpeaking;
 
-    // 1. JALANKAN PEREKAM SUARA
-    if (shouldListen.current && !mediaRecorderRef.current) {
-      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
+    // A. MEREKAM DENGAN STREAM UTAMA YANG SUDAH NYALA SEJAK AWAL
+    if (shouldListen.current && micStreamRef.current && !mediaRecorderRef.current) {
+      const mediaRecorder = new MediaRecorder(micStreamRef.current, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
 
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) audioChunksRef.current.push(event.data);
-        };
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
 
-        mediaRecorder.onstop = async () => {
-          setIsProcessingAudio(true);
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          const textDariGroq = await transcribeAudioWithGroq(audioBlob);
-          const currentPhase = currentPhaseRef.current;
-          
-          if (currentPhase === 'presentation') {
-            setDataLengkap(prev => ({ ...prev, presentasi_transcript: textDariGroq }));
-            setPhase('transisi_manual');
-          } else if (currentPhase === 'answering_1') {
-            setDataLengkap(prev => ({ ...prev, jawaban_1: textDariGroq }));
-            setPhase('qna_2_ask');
-          } else if (currentPhase === 'answering_2') {
-            setDataLengkap(prev => ({ ...prev, jawaban_2: textDariGroq }));
-            setPhase('qna_3_ask');
-          } else if (currentPhase === 'answering_3') {
-            setDataLengkap(prev => ({ ...prev, jawaban_3: textDariGroq }));
-            setPhase('closing_video');
-          }
+      mediaRecorder.onstop = async () => {
+        setIsProcessingAudio(true);
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        // Kirim audio murni instan ke Groq
+        const textDariGroq = await transcribeAudioWithGroq(audioBlob);
+        const currentPhase = currentPhaseRef.current;
+        
+        // Filter agar jika text kosong tidak merusak model evaluasi
+        const textHasil = textDariGroq.trim() !== "" ? textDariGroq : "Mahasiswa tidak memberikan jawaban verbal.";
 
-          setIsProcessingAudio(false);
-          mediaRecorderRef.current = null; 
-        };
+        if (currentPhase === 'presentation') {
+          setDataLengkap(prev => ({ ...prev, presentasi_transcript: textHasil }));
+          setPhase('transisi_manual');
+        } else if (currentPhase === 'answering_1') {
+          setDataLengkap(prev => ({ ...prev, jawaban_1: textHasil }));
+          setPhase('qna_2_ask');
+        } else if (currentPhase === 'answering_2') {
+          setDataLengkap(prev => ({ ...prev, jawaban_2: textHasil }));
+          setPhase('qna_3_ask');
+        } else if (currentPhase === 'answering_3') {
+          setDataLengkap(prev => ({ ...prev, jawaban_3: textHasil }));
+          setPhase('closing_video');
+        }
 
-        mediaRecorder.start();
-      }).catch(err => {}); // Hilangkan console.error
+        setIsProcessingAudio(false);
+        mediaRecorderRef.current = null; 
+      };
+
+      mediaRecorder.start(1000); 
     }
 
-    // 2. JALANKAN SAKLAR PENDETEKSI KATA
+    // B. SAKLAR DETEKSI SUARA VERBAL (AUTO NEXT JIKA BICARA SELESAI)
     if (shouldListen.current) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
+        
         recognition.continuous = true;     
         recognition.interimResults = true; 
         recognition.lang = 'id-ID';
@@ -279,25 +340,31 @@ export default function DashboardUjian() {
             detektorKata += event.results[i][0].transcript.toLowerCase() + " ";
           }
           
-          setUserTranscript(detektorKata); 
+          const teksLengkap = detektorKata.trim();
+          if (!isProcessingAudio) {
+             setUserTranscript(teksLengkap); 
+          }
           
+          // Auto trigger jika mendengar kalimat penutup
           if (
-            (phase === 'presentation' && (detektorKata.includes('sekian presentasi') || detektorKata.includes('presentasi dari saya'))) ||
-            (phase.startsWith('answering_') && (detektorKata.includes('sekian jawaban') || detektorKata.includes('jawaban saya')))
+            (phase === 'presentation' && (teksLengkap.includes('sekian presentasi') || teksLengkap.includes('presentasi dari saya'))) ||
+            (phase.startsWith('answering_') && (teksLengkap.includes('sekian jawaban') || teksLengkap.includes('jawaban saya')))
           ) {
-            shouldListen.current = false;
-            recognition.stop();
-            if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-               mediaRecorderRef.current.stop(); 
-            }
-            setUserTranscript("Memproses audio dengan Groq AI...");
-            return;
+            handleManualNextPhase();
           }
         };
 
         recognition.onend = () => { 
-          if (shouldListen.current) { try { recognition.start(); } catch(e){} }
+          if (shouldListen.current) { 
+              try { recognition.start(); } catch(e){} 
+          }
         };
+        recognition.onerror = (e) => {
+          if (e.error !== 'no-speech') {
+             console.log("Speech recognition error:", e.error);
+          }
+        };
+
         try { recognition.start(); } catch(e){}
       }
     }
@@ -306,7 +373,7 @@ export default function DashboardUjian() {
       shouldListen.current = false;
       if (recognition) { try { recognition.stop(); } catch(e){} }
     };
-  }, [phase, isMicOn, isAiSpeaking]);
+  }, [phase, isMicOn, isAiSpeaking]); 
 
   // =========================
   // CAMERA STREAM
@@ -331,6 +398,12 @@ export default function DashboardUjian() {
     };
   }, [isVideoOn]);
 
+  // Menentukan indeks pertanyaan untuk Pop-up aktif
+  let activeQuestionIndex = -1;
+  if (phase.includes('_1') || phase === 'answering_1') activeQuestionIndex = 0;
+  if (phase.includes('_2') || phase === 'answering_2') activeQuestionIndex = 1;
+  if (phase.includes('_3') || phase === 'answering_3') activeQuestionIndex = 2;
+
   return (
     <div className="h-screen w-full bg-[#050012] flex flex-col p-4 font-sans text-white overflow-hidden relative" style={{ background: "linear-gradient(160deg, #f0f8ff 0%, #e1f0fd 25%, #dbeeff 55%, #edf6ff 100%)" }}>
       
@@ -339,7 +412,7 @@ export default function DashboardUjian() {
         <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full" style={{ background: "radial-gradient(circle, rgba(186,230,255,0.22) 0%, transparent 70%)" }} />
       </div>
 
-      {/* TAMPILAN LOADING SEMENTARA DATA DIKIRIM (AWAL) */}
+      {/* LOADING SCREEN */}
       {phase === 'loading_data' && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4">
           <div className="bg-white border border-blue-100 p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center gap-4">
@@ -349,7 +422,6 @@ export default function DashboardUjian() {
         </div>
       )}
 
-      {/* TAMPILAN LOADING EVALUASI AI (AKHIR) */}
       {isEvaluating && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 transition-all duration-300">
           <div className="bg-white border border-blue-100 p-8 rounded-3xl text-center shadow-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in-95">
@@ -373,7 +445,7 @@ export default function DashboardUjian() {
         </button>
       </div>
 
-      {/* CONTENT LAYOUT */}
+      {/* CONTENT */}
       <div className="flex-1 w-full flex flex-col md:flex-row gap-4 relative overflow-hidden pb-4 z-10">
         
         {/* DOSEN AI */}
@@ -437,54 +509,82 @@ export default function DashboardUjian() {
             )}
           </div>
 
-          {/* TIMER & REC */}
           <div className="absolute top-4 left-4 flex flex-col gap-3 z-20">
+            {/* TIMER */}
             <div className="flex items-center gap-3">
               <div className="bg-white/80 backdrop-blur-md border border-red-200 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-sm">
                 <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 <span className="text-red-500 text-xs md:text-sm font-bold tracking-wider">REC</span>
               </div>
               <div className="bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 border border-blue-200/50">
-                <span className="font-mono text-xs md:text-sm font-bold tracking-widest text-slate-700">{formatTime(time)} / 10:00</span>
+                <span className="font-mono text-xs md:text-sm font-bold tracking-widest text-slate-700">Total Waktu: {formatTime(time)}</span>
               </div>
             </div>
 
+            {/* BOX PETUNJUK USER */}
             {phase === 'presentation' && (
-              <div className="bg-blue-50/90 backdrop-blur-md border border-blue-200 px-4 py-3 rounded-xl shadow-xl w-max flex items-center gap-3 animate-in fade-in slide-in-from-top-2 mt-1">
-                <Mic size={18} className={shouldListen.current ? "text-blue-500 animate-pulse" : "text-slate-400"} />
-                <span className="text-slate-700 text-xs md:text-sm font-medium">
-                  <strong className="text-blue-600">INFO:</strong> Ucapkan <span className="font-bold text-slate-900 tracking-wide bg-white px-2 py-0.5 rounded border border-blue-100">"Sekian presentasi dari saya"</span> jika selesai.
-                </span>
+              <div className="bg-blue-50/95 backdrop-blur-md border border-blue-200 px-4 py-3 rounded-2xl shadow-xl w-max flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 mt-1">
+                <div className="flex items-center gap-2">
+                  <Mic size={16} className={shouldListen.current ? "text-blue-500 animate-pulse" : "text-slate-400"} />
+                  <span className="text-slate-700 text-xs font-bold tracking-wider uppercase">Petunjuk Presentasi:</span>
+                </div>
+                <p className="text-slate-600 text-xs pl-6">
+                  Ucapkan kata <span className="font-bold text-blue-700">"Sekian presentasi dari saya"</span> jika sudah selesai,<br/>
+                  atau langsung klik tombol <span className="font-bold text-blue-700">Selesai Presentasi</span> di pojok bawah.
+                </p>
               </div>
             )}
 
             {phase.startsWith('answering_') && (
-              <div className="bg-emerald-50/90 backdrop-blur-md border border-emerald-200 px-4 py-3 rounded-xl shadow-xl w-max flex items-center gap-3 animate-in fade-in slide-in-from-top-2 mt-1">
-                <Mic size={18} className={shouldListen.current ? "text-emerald-500 animate-pulse" : "text-slate-400"} />
-                <span className="text-slate-700 text-xs md:text-sm font-medium">
-                  <strong className="text-emerald-600">INFO:</strong> Ucapkan <span className="font-bold text-slate-900 tracking-wide bg-white px-2 py-0.5 rounded border border-emerald-100">"Sekian jawaban saya"</span> jika selesai.
-                </span>
+              <div className="bg-emerald-50/95 backdrop-blur-md border border-emerald-200 px-4 py-3 rounded-2xl shadow-xl w-max flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 mt-1">
+                <div className="flex items-center gap-2">
+                  <Mic size={16} className={shouldListen.current ? "text-emerald-500 animate-pulse" : "text-slate-400"} />
+                  <span className="text-slate-700 text-xs font-bold tracking-wider uppercase">Petunjuk Menjawab:</span>
+                </div>
+                <p className="text-slate-600 text-xs pl-6">
+                  Ucapkan kata <span className="font-bold text-emerald-700">"Sekian jawaban saya"</span> jika sudah selesai,<br/>
+                  atau langsung klik tombol <span className="font-bold text-emerald-700">Selesai Menjawab</span> di pojok bawah.
+                </p>
+              </div>
+            )}
+
+            {/* 🚀 POP-UP PERTANYAAN DOSEN AKTIF (GLASSMORPHISM) */}
+            {activeQuestionIndex !== -1 && (
+              <div className="bg-slate-900/75 border border-white/20 backdrop-blur-md p-5 rounded-2xl shadow-2xl max-w-sm mt-3 animate-in fade-in slide-in-from-top-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare size={16} className="text-sky-400" />
+                  <p className="text-sky-400 text-xs font-bold uppercase tracking-wider">Pertanyaan {activeQuestionIndex + 1}</p>
+                </div>
+                <p className="text-white text-sm leading-relaxed font-semibold">
+                  "{generatedQuestions[activeQuestionIndex]}"
+                </p>
               </div>
             )}
           </div>
 
-          {/* STATUS LABEL */}
-          <div className="absolute bottom-6 left-4 z-20 hidden md:block">
+          {/* 🚀 TOMBOL MANUAL INPUT POJOK KIRI BAWAH */}
+          <div className="absolute bottom-6 left-6 z-50">
             {phase === "presentation" && (
-              <div className="bg-white/80 backdrop-blur-md border border-blue-200/50 px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2 w-max">
-                <div className="w-2 h-2 bg-sky-500 rounded-full animate-pulse"></div>
-                <span className="text-slate-700 text-xs font-medium">Anda (Presentasi)</span>
-              </div>
+              <button 
+                onClick={handleManualNextPhase} 
+                className="bg-blue-600/90 hover:bg-blue-600 border border-blue-400 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 font-bold transition-all hover:scale-105"
+              >
+                <CheckCircle2 size={20} />
+                Selesai Presentasi
+              </button>
             )}
             {phase.startsWith('answering_') && (
-              <div className="bg-sky-100/90 backdrop-blur-md border border-sky-200 px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2 w-max">
-                <MessageSquare size={14} className="text-sky-500" />
-                <span className="text-slate-700 text-xs font-medium">Tanya Jawab</span>
-              </div>
+              <button 
+                onClick={handleManualNextPhase} 
+                className="bg-emerald-600/90 hover:bg-emerald-600 border border-emerald-400 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 font-bold transition-all hover:scale-105"
+              >
+                <CheckCircle2 size={20} />
+                Selesai Menjawab
+              </button>
             )}
             {phase === "finished" && (
-              <div className="bg-green-100/90 backdrop-blur-md border border-green-200 px-3 py-1.5 rounded-xl shadow-lg">
-                <span className="text-green-700 text-xs font-bold">Sidang Selesai</span>
+              <div className="bg-slate-800/80 backdrop-blur-md border border-slate-600 px-4 py-2 rounded-xl shadow-lg">
+                <span className="text-white text-xs font-bold tracking-wider">UJIAN SELESAI</span>
               </div>
             )}
           </div>
