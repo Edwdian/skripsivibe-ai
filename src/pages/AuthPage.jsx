@@ -5,6 +5,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  reload,
 } from "firebase/auth";
 
 import {
@@ -20,7 +23,7 @@ import {
 
 import emailjs from "@emailjs/browser";
 
-import { Eye, EyeOff, CheckCircle, KeyRound, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, CheckCircle, KeyRound, ShieldCheck, Mail } from "lucide-react";
 
 import { auth, db } from "../firebase/config.js";
 
@@ -28,7 +31,6 @@ const EMAILJS_SERVICE_ID  = "service_8jwzrs7";
 const EMAILJS_TEMPLATE_ID = "template_smhde1e";
 const EMAILJS_PUBLIC_KEY  = "0O2DeYRJndy1t7a5N";
 
-// Cloud Function URL
 const RESET_PASSWORD_URL = "https://us-central1-skripsivibe-ai.cloudfunctions.net/resetUserPassword";
 
 function generateOTP() {
@@ -78,6 +80,7 @@ async function sendOTPEmail(email, otp) {
 export default function AuthPage() {
   const navigate = useNavigate();
 
+  // Mode tambahan: "verify-email" = halaman tunggu konfirmasi email
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,10 +95,32 @@ export default function AuthPage() {
   const timerRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [nameError, setNameError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [otpError, setOtpError] = useState("");
+  const [verifyError, setVerifyError] = useState("");
+
+  // Polling: cek apakah email sudah diverifikasi setiap 3 detik
+  // saat mode === "verify-email"
+  useEffect(() => {
+    if (mode !== "verify-email") return;
+    const interval = setInterval(async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+        await reload(user); // refresh status dari Firebase
+        if (user.emailVerified) {
+          clearInterval(interval);
+          // Sign out dulu, arahkan ke login
+          await auth.signOut();
+          setMode("verified-success");
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [mode]);
 
   const isValidGmail = (e) => e?.toLowerCase().trim().endsWith("@gmail.com");
 
@@ -132,7 +157,7 @@ export default function AuthPage() {
   }, [password, mode]);
 
   const resetErrors = () => {
-    setNameError(""); setEmailError(""); setPasswordError(""); setOtpError("");
+    setNameError(""); setEmailError(""); setPasswordError(""); setOtpError(""); setVerifyError("");
   };
 
   const handleOtpChange = (index, value) => {
@@ -157,6 +182,27 @@ export default function AuthPage() {
       otpRefs.current[5]?.focus();
     }
     e.preventDefault();
+  };
+
+  // Kirim ulang email verifikasi
+  const handleResendVerification = async () => {
+    setResendLoading(true);
+    setVerifyError("");
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await sendEmailVerification(user);
+        setVerifyError("✅ Email verifikasi berhasil dikirim ulang!");
+      }
+    } catch (err) {
+      if (err.code === "auth/too-many-requests") {
+        setVerifyError("Terlalu banyak permintaan. Tunggu beberapa menit.");
+      } else {
+        setVerifyError("Gagal mengirim ulang. Coba lagi.");
+      }
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const handleAuth = async (e) => {
@@ -204,8 +250,6 @@ export default function AuthPage() {
         if (password !== confirmPassword) {
           setPasswordError("Password dan konfirmasi tidak cocok"); return;
         }
-
-        // ✅ Update password langsung via Cloud Function (realtime)
         const response = await fetch(RESET_PASSWORD_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -214,12 +258,10 @@ export default function AuthPage() {
             newPassword: password,
           }),
         });
-
         const result = await response.json();
         if (!response.ok) {
           setPasswordError(result.error || "Gagal mengubah password"); return;
         }
-
         setMode("reset-success");
         return;
       }
@@ -228,7 +270,18 @@ export default function AuthPage() {
       if (mode === "login") {
         if (!email || !isValidGmail(email)) { setEmailError("Hanya email @gmail.com yang diperbolehkan"); return; }
         if (!password || password.length < 6) { setPasswordError("Password minimal 6 karakter"); return; }
-        await signInWithEmailAndPassword(auth, email, password);
+
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // ✅ Cek apakah email sudah diverifikasi
+        if (!user.emailVerified) {
+          // Kirim ulang email verifikasi otomatis
+          await sendEmailVerification(user);
+          setMode("verify-email");
+          return;
+        }
+
         navigate("/dashboard-user");
         return;
       }
@@ -238,6 +291,7 @@ export default function AuthPage() {
         if (!name.trim()) { setNameError("Nama lengkap wajib diisi"); return; }
         if (!email || !isValidGmail(email)) { setEmailError("Hanya email @gmail.com yang diperbolehkan"); return; }
         if (!password || password.length < 6) { setPasswordError("Password minimal 6 karakter"); return; }
+
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(userCredential.user, { displayName: name.trim() });
         await setDoc(doc(db, "users", userCredential.user.uid), {
@@ -246,8 +300,12 @@ export default function AuthPage() {
           email: email.toLowerCase().trim(),
           createdAt: new Date(),
         });
-        setMode("login");
-        setName(""); setEmail(""); setPassword("");
+
+        // ✅ Kirim email verifikasi setelah register
+        await sendEmailVerification(userCredential.user);
+
+        // Langsung ke halaman tunggu verifikasi
+        setMode("verify-email");
         return;
       }
 
@@ -307,6 +365,8 @@ export default function AuthPage() {
     otp: "Verifikasi Kode",
     "new-password": "Buat Password Baru",
     "reset-success": "Berhasil!",
+    "verify-email": "Verifikasi Email",
+    "verified-success": "Email Terverifikasi!",
   };
 
   const subtitles = {
@@ -316,6 +376,8 @@ export default function AuthPage() {
     otp: `Kode 6 digit telah dikirim ke ${email}`,
     "new-password": "Buat password baru yang kuat",
     "reset-success": "Password Anda telah berhasil diubah",
+    "verify-email": "Cek inbox Gmail kamu",
+    "verified-success": "Akun kamu sudah aktif, silakan login",
   };
 
   return (
@@ -339,6 +401,13 @@ export default function AuthPage() {
             </div>
           </div>
         )}
+        {mode === "verify-email" && (
+          <div className="flex justify-center mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center">
+              <Mail size={28} className="text-blue-500" />
+            </div>
+          </div>
+        )}
 
         <h1 className="text-3xl md:text-4xl font-bold text-center text-slate-800 mb-2 tracking-tight">
           {titles[mode]}
@@ -351,8 +420,7 @@ export default function AuthPage() {
 
           {mode === "register" && (
             <div>
-              <input
-                type="text" placeholder="Nama Lengkap" value={name}
+              <input type="text" placeholder="Nama Lengkap" value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full rounded-2xl px-5 py-3.5 outline-none text-slate-700"
                 style={{ background: "rgba(255,255,255,0.9)", border: "1px solid rgba(147,197,253,0.35)" }}
@@ -363,8 +431,7 @@ export default function AuthPage() {
 
           {["login", "register", "forgot"].includes(mode) && (
             <div>
-              <input
-                type="email" placeholder="Email @gmail.com" value={email}
+              <input type="email" placeholder="Email @gmail.com" value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-2xl px-5 py-3.5 outline-none text-slate-700"
                 style={{ background: "rgba(255,255,255,0.9)", border: "1px solid rgba(147,197,253,0.35)" }}
@@ -375,8 +442,7 @@ export default function AuthPage() {
 
           {["login", "register"].includes(mode) && (
             <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"} placeholder="Password" value={password}
+              <input type={showPassword ? "text" : "password"} placeholder="Password" value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-2xl px-5 py-3.5 pr-14 outline-none text-slate-700"
                 style={{ background: "rgba(255,255,255,0.9)", border: "1px solid rgba(147,197,253,0.35)" }}
@@ -393,8 +459,7 @@ export default function AuthPage() {
             <div className="space-y-4">
               <div className="flex gap-3 justify-center" onPaste={handleOtpPaste}>
                 {otpDigits.map((digit, i) => (
-                  <input
-                    key={i} ref={(el) => (otpRefs.current[i] = el)}
+                  <input key={i} ref={(el) => (otpRefs.current[i] = el)}
                     type="text" inputMode="numeric" maxLength={1} value={digit}
                     onChange={(e) => handleOtpChange(i, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(i, e)}
@@ -431,8 +496,7 @@ export default function AuthPage() {
           {mode === "new-password" && (
             <>
               <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"} placeholder="Password baru" value={password}
+                <input type={showPassword ? "text" : "password"} placeholder="Password baru" value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full rounded-2xl px-5 py-3.5 pr-14 outline-none text-slate-700"
                   style={{ background: "rgba(255,255,255,0.9)", border: "1px solid rgba(147,197,253,0.35)" }}
@@ -443,8 +507,7 @@ export default function AuthPage() {
                 </button>
               </div>
               <div className="relative">
-                <input
-                  type={showConfirmPassword ? "text" : "password"} placeholder="Konfirmasi password baru"
+                <input type={showConfirmPassword ? "text" : "password"} placeholder="Konfirmasi password baru"
                   value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                   className="w-full rounded-2xl px-5 py-3.5 pr-14 outline-none text-slate-700"
                   style={{ background: "rgba(255,255,255,0.9)", border: "1px solid rgba(147,197,253,0.35)" }}
@@ -475,6 +538,73 @@ export default function AuthPage() {
             </>
           )}
 
+          {/* ── VERIFY EMAIL ── */}
+          {mode === "verify-email" && (
+            <div className="space-y-5">
+              <div className="rounded-2xl p-5 text-center"
+                style={{ background: "rgba(219,234,254,0.4)", border: "1px solid rgba(147,197,253,0.4)" }}>
+                <p className="text-slate-700 text-sm mb-1">Email verifikasi dikirim ke:</p>
+                <p className="font-semibold text-blue-600">{auth.currentUser?.email}</p>
+              </div>
+
+              <div className="space-y-2 text-sm text-slate-600">
+                <div className="flex items-start gap-2">
+                  <span>1.</span><span>Buka inbox Gmail kamu</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span>2.</span><span>Cari email dari <strong>Firebase</strong></span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span>3.</span><span>Klik link <strong>"Verify your email"</strong></span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span>4.</span><span>Halaman ini otomatis lanjut setelah terverifikasi ✅</span>
+                </div>
+              </div>
+
+              {/* Loading dots animasi */}
+              <div className="flex items-center justify-center gap-1.5 py-2">
+                <span className="text-slate-400 text-sm mr-2">Menunggu verifikasi</span>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-blue-400"
+                    style={{ animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+                ))}
+              </div>
+
+              {verifyError && (
+                <p className={`text-sm text-center ${verifyError.startsWith("✅") ? "text-green-600" : "text-red-500"}`}>
+                  {verifyError}
+                </p>
+              )}
+
+              <button type="button" onClick={handleResendVerification} disabled={resendLoading}
+                className="w-full py-3 rounded-2xl font-semibold text-sm transition-all disabled:opacity-60"
+                style={{ background: "rgba(219,234,254,0.6)", color: "#2563eb", border: "1px solid rgba(147,197,253,0.5)" }}>
+                {resendLoading ? "Mengirim..." : "Kirim ulang email verifikasi"}
+              </button>
+
+              <button type="button" onClick={goBackToLogin}
+                className="w-full text-sm text-blue-500 hover:text-blue-600 transition-colors">
+                ← Kembali ke Login
+              </button>
+            </div>
+          )}
+
+          {mode === "verified-success" && (
+            <div className="text-center py-6">
+              <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-5">
+                <CheckCircle size={32} className="text-green-600" />
+              </div>
+              <h3 className="text-xl font-semibold text-slate-800 mb-2">Akun Berhasil Diverifikasi!</h3>
+              <p className="text-slate-500 text-sm mb-6">Silakan login dengan email dan password kamu.</p>
+              <button type="button" onClick={goBackToLogin}
+                className="w-full text-white py-3.5 rounded-2xl font-bold text-base hover:scale-[1.01] active:scale-[0.98] transition-all"
+                style={{ background: "linear-gradient(135deg, #2563eb, #0ea5e9)" }}>
+                Masuk Sekarang
+              </button>
+            </div>
+          )}
+
           {mode === "reset-success" && (
             <div className="text-center py-6">
               <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-5">
@@ -485,7 +615,7 @@ export default function AuthPage() {
             </div>
           )}
 
-          {mode !== "reset-success" && (
+          {!["reset-success", "verify-email", "verified-success"].includes(mode) && (
             <button type="submit" disabled={loading}
               className="w-full text-white py-3.5 rounded-2xl font-bold text-base hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70"
               style={{ background: "linear-gradient(135deg, #2563eb, #0ea5e9)" }}>
@@ -551,6 +681,14 @@ export default function AuthPage() {
         )}
 
       </div>
+
+      {/* CSS animasi loading dots */}
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+          40% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { auth } from "../firebase/config.js";
-import { signOut } from "firebase/auth";
+import { signOut, onAuthStateChanged } from "firebase/auth";
 
 // IMPORT FUNGSI API
 import { fetchQuestionsFromPDF } from "../utils/apiService"; 
@@ -33,8 +33,15 @@ export default function DashboardUser() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const user = auth.currentUser;
-  const userName = user?.displayName || "User";
+  const [user, setUser] = useState(auth.currentUser);
+  const userName = user?.displayName ;
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const initials = userName
       ?.split(" ")

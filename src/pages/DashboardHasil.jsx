@@ -1,5 +1,5 @@
 import React from "react";
-import { useLocation, useNavigate } from "react-router-dom"; 
+import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import {
   Trophy,
   Brain,
@@ -14,6 +14,10 @@ import {
 export default function DashboardHasil() {
   const location = useLocation();
   const navigate = useNavigate();
+
+  if (!location.state?.hasilAI) {
+    return <Navigate to="/dashboard-user" replace />;
+  }
 
   // Tangkap data hasil AI dari halaman ujian, berikan nilai default jika kosong
   const hasilAI = location.state?.hasilAI || {
