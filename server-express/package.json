@@ -19,6 +19,6 @@
     "firebase-admin": "^13.10.0",
     "multer": "^2.1.1",
     "nodemon": "^3.1.14",
-    "pdf-parse": "^2.4.5"
+    "pdf-parse": "^1.1.1"
   }
 }

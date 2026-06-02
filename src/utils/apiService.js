@@ -59,9 +59,9 @@ export const transcribeAudioWithGroq = async (audioBlob) => {
   formData.append("file", audioBlob, "audio.webm");
   formData.append("model", "whisper-large-v3");
   formData.append("language", "id"); 
-  
-  formData.append("prompt", "Transkripsi verbatim mutlak. Tuliskan semua kata apa adanya persis sesuai audio asli. Jangan merubah pola kalimat, jangan memperbaiki tata bahasa, dan tuliskan segala jeda atau ucapan persis seperti yang terdengar.");
-  formData.append("temperature", "0.2"); 
+
+  formData.append("prompt", "Berikut adalah presentasi formal simulasi tanya jawab sidang skripsi.");
+  formData.append("temperature", "0");
 
   try {
     const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
