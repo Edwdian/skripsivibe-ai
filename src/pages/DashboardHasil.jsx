@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useLocation, useNavigate, Navigate } from "react-router-dom";
+import { useLocation, useNavigate, Navigate } from "react-router-dom"; 
 import {
   Trophy,
   Brain,
@@ -18,6 +18,7 @@ export default function DashboardHasil() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // PROTEKSI HALAMAN DARI EDWIN: Jika tidak ada data hasil (langsung akses URL), lempar balik ke dashboard
   if (!location.state?.hasilAI) {
     return <Navigate to="/dashboard-user" replace />;
   }
@@ -110,7 +111,7 @@ export default function DashboardHasil() {
   else if (skor_akhir >= 80) { grade_akhir = "A-"; grade_color = "text-emerald-500"; grade_bg = "border-emerald-300 bg-emerald-50/50"; }
   else if (skor_akhir >= 75) { grade_akhir = "B+"; grade_color = "text-blue-500"; grade_bg = "border-blue-300 bg-blue-50/50"; }
   else if (skor_akhir >= 70) { grade_akhir = "B"; grade_color = "text-blue-500"; grade_bg = "border-blue-300 bg-blue-50/50"; }
-  else if (skor_akhir >= 65) { grade_akhir = "C+"; grade_color = "text-slate-600"; grade_bg = "border-slate-300 bg-slate-50/50"; } // Menggunakan silver/gray gradient concept
+  else if (skor_akhir >= 65) { grade_akhir = "C+"; grade_color = "text-slate-600"; grade_bg = "border-slate-300 bg-slate-50/50"; } 
   else if (skor_akhir >= 60) { grade_akhir = "C"; grade_color = "text-slate-600"; grade_bg = "border-slate-300 bg-slate-50/50"; }
   else { grade_akhir = "D"; grade_color = "text-red-500"; grade_bg = "border-red-400 bg-red-50/50"; }
 
@@ -205,7 +206,7 @@ export default function DashboardHasil() {
     <div className="min-h-screen text-slate-800 font-sans relative overflow-hidden" 
          style={{ background: 'linear-gradient(160deg, #e0f2ff 0%, #cfe8ff 25%, #b9dcff 55%, #d9efff 100%)' }}>
 
-      {/* BACKGROUND BLOBS (Sesuai Landing Page) */}
+      {/* BACKGROUND BLOBS */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex: 0}}>
         <div className="absolute top-[-8%] left-[-5%] w-[520px] h-[520px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(96,165,250,0.40) 0%, transparent 70%)' }}></div>
         <div className="absolute top-[25%] right-[-8%] w-[600px] h-[600px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(125,211,252,0.32) 0%, transparent 70%)' }}></div>
@@ -223,7 +224,6 @@ export default function DashboardHasil() {
               Evaluasi Sidang AI
             </h1>
           </div>
-          {/* Tombol Vibrant Blue Gradient */}
           <button 
             onClick={handleDownloadTranscript}
             className="flex items-center justify-center gap-2 text-white px-6 py-3 rounded-xl font-bold shadow-[0_4px_15px_rgba(59,130,246,0.35)] hover:opacity-90 transition-all hover:scale-105"
@@ -234,7 +234,7 @@ export default function DashboardHasil() {
           </button>
         </div>
 
-        {/* CARD UTAMA NILAI (Translucent Glassmorphism) */}
+        {/* CARD UTAMA NILAI */}
         <div className="rounded-[2rem] p-8 md:p-10 shadow-lg border border-blue-200/50" style={{ background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(16px)' }}>
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="text-center md:text-left">
@@ -246,16 +246,13 @@ export default function DashboardHasil() {
               </p>
             </div>
 
-            {/* SCORE DISPLAY (Clean Layout) */}
+            {/* SCORE DISPLAY */}
             <div className="relative flex flex-col items-center justify-center shrink-0">
-              {/* Lingkaran hanya fokus pada Grade */}
               <div className={`relative w-36 h-36 rounded-full border-[6px] flex items-center justify-center shadow-lg backdrop-blur-sm ${grade_bg}`}>
                 <h2 className={`text-6xl font-black ${grade_color}`}>
                   {grade_akhir}
                 </h2>
               </div>
-              
-              {/* Pill Total Skor di bawah lingkaran */}
               <div className="mt-5 px-6 py-2.5 rounded-full shadow-sm flex items-center gap-2 border border-blue-100" style={{ background: 'rgba(255,255,255,0.9)' }}>
                 <span className="text-slate-500 text-sm font-bold tracking-wide">Total Skor:</span>
                 <span className={`text-lg font-black ${grade_color}`}>{skor_akhir}</span>
@@ -266,7 +263,6 @@ export default function DashboardHasil() {
 
         {/* STATISTIK UTAMA */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
           {/* Penguasaan Materi Card */}
           <div className="rounded-3xl p-6 shadow-md border border-blue-200/50 hover:scale-[1.02] transition-transform" style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)' }}>
             <div className="flex justify-between items-start">
@@ -362,7 +358,6 @@ export default function DashboardHasil() {
               ))}
             </div>
 
-            {/* Pagination Controls */}
             {totalPagesUnggul > 1 && (
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                 <button 
@@ -410,7 +405,6 @@ export default function DashboardHasil() {
               ))}
             </div>
 
-            {/* Pagination Controls */}
             {totalPagesLemah > 1 && (
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-100">
                 <button 
@@ -458,7 +452,6 @@ export default function DashboardHasil() {
               ))}
             </div>
 
-            {/* Pagination Controls */}
             {totalPagesStrategi > 1 && (
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                 <button 
@@ -493,7 +486,7 @@ export default function DashboardHasil() {
             return (
               <div key={index} className="rounded-3xl p-6 shadow-sm border border-blue-200/50 flex flex-col relative transition-all hover:-translate-y-1 hover:shadow-md" style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)' }}>
                 
-                {/* Badge Status - Sesuai aksen minor */}
+                {/* Badge Status */}
                 <div className="absolute top-6 right-6">
                   <span className={`px-4 py-1.5 text-[10px] font-bold tracking-wide uppercase rounded-full border shadow-sm ${
                     isBenar ? 'bg-emerald-50 text-emerald-500 border-emerald-200' :
@@ -527,8 +520,8 @@ export default function DashboardHasil() {
           })}
         </div>
 
-      {/* TOMBOL AKSI BAWAH */}
-        <div className="flex gap-3 pt-4 justify-end">
+        {/* TOMBOL AKSI BAWAH (DARI MAS EDWIN) */}
+        <div className="flex flex-wrap gap-3 pt-4 justify-end">
           <button
             onClick={handleDownloadTranscript}
             className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white hover:opacity-90 transition hover:scale-105"
