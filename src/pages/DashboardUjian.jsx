@@ -236,16 +236,23 @@ export default function DashboardUjian() {
   // =========================================================
   useEffect(() => {
     let timer;
-    const activePhases = [
-      'presentation', 'transisi_manual', 'time_up', 
-      'qna_1_ask', 'answering_1', 'qna_2_ask', 'answering_2', 'qna_3_ask', 'answering_3'
-    ];
 
-    if (activePhases.includes(phase)) {
-      timer = setInterval(() => setTime((prev) => prev + 1), 1000);
+    if (phase === 'presentation') {
+      timer = setInterval(() => {
+        setTime((prev) => {
+          if (prev >= MAX_TIME - 1) {
+            clearInterval(timer);
+            handleManualNextPhase(); // ✅ otomatis lanjut saat waktu habis
+            return MAX_TIME;
+          }
+          return prev + 1;
+        });
+      }, 1000);
     }
-    return () => clearInterval(timer);
+      return () => clearInterval(timer);
   }, [phase]);
+
+  const MAX_TIME = 10 * 60;
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -517,7 +524,11 @@ export default function DashboardUjian() {
                 <span className="text-red-500 text-xs md:text-sm font-bold tracking-wider">REC</span>
               </div>
               <div className="bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 border border-blue-200/50">
-                <span className="font-mono text-xs md:text-sm font-bold tracking-widest text-slate-700">Total Waktu: {formatTime(time)}</span>
+                <span className="font-mono text-xs md:text-sm font-bold tracking-widest text-slate-700">
+                  Timer {formatTime(time)}
+                  <span className="text-slate-400 text-black"> / </span>
+                  <span className="text-slate-400 text-black">10:00</span>
+                </span>
               </div>
             </div>
 

@@ -73,7 +73,12 @@ export const transcribeAudioWithGroq = async (audioBlob) => {
     });
 
     const data = await response.json();
-    return data.text;
+
+    if (!response.ok) {
+      console.error("Groq error response:", data);
+      return "";
+    }
+    return data.text || "";
   } catch (error) {
     console.error("Error Groq:", error);
     return "";

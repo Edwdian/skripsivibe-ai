@@ -23,6 +23,31 @@ const Riwayat = () => {
     item.judul?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const safeSimulations = Array.isArray(simulations) ? simulations : [];
+  const totalMenit = Math.round(
+    safeSimulations.reduce((acc, s) => acc + (s.durasi || 0), 0) / 60
+  );
+  const nilaiAngka = safeSimulations
+    .map((s) => parseInt(s.nilai))
+    .filter((n) => !isNaN(n));
+  const nilaiRata =
+    nilaiAngka.length > 0
+      ? Math.round(nilaiAngka.reduce((a, b) => a + b, 0) / nilaiAngka.length)
+      : null;
+
+  // Konversi rata-rata angka ke grade
+  const getGradeFromNilai = (nilai) => {
+    if (nilai >= 85) return "A";
+    if (nilai >= 80) return "A-";
+    if (nilai >= 75) return "B+";
+    if (nilai >= 70) return "B";
+    if (nilai >= 65) return "C+";
+    if (nilai >= 60) return "C";
+    return "D";
+  };
+
+  const gradeRata = nilaiRata !== null ? getGradeFromNilai(nilaiRata) : null;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -46,14 +71,14 @@ const Riwayat = () => {
             <Award className="text-emerald-500" size={18} />
           </div>
           <p className="text-slate-400 text-xs">Nilai Rata-rata</p>
-          <h3 className="text-2xl font-bold text-slate-800 mt-1">-</h3>
+          <h3 className="text-2xl font-bold text-slate-800 mt-1">{nilaiRata !== null ? nilaiRata : "-"}</h3>
         </div>
         <div className="rounded-2xl p-5 col-span-2 md:col-span-1" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
           <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center mb-3">
             <Clock className="text-sky-400" size={18} />
           </div>
           <p className="text-slate-400 text-xs">Total Latihan</p>
-          <h3 className="text-2xl font-bold text-slate-800 mt-1">0 Menit</h3>
+          <h3 className="text-2xl font-bold text-slate-800 mt-1">{totalMenit} Menit</h3>
         </div>
       </div>
 
@@ -104,7 +129,9 @@ const Riwayat = () => {
                     <h4 className="font-bold text-base text-slate-800 mb-1">{item.judul}</h4>
                     <div className="flex flex-wrap gap-3 text-xs text-slate-400">
                       {item.date && <span>📅 {item.date}</span>}
-                      {item.duration && <span>⏱ {item.duration}</span>}
+                      {item.durasi && (
+                        <span>⏱ {Math.round(item.durasi / 60)} menit</span>
+                      )}
                       {item.mode && (
                         <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-500 font-semibold border border-blue-100">
                           {item.mode}
@@ -117,8 +144,16 @@ const Riwayat = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
-                  <div className="w-12 h-12 rounded-full border-2 border-emerald-400 bg-emerald-50 flex items-center justify-center font-bold text-emerald-600 text-sm">
-                    {item.nilai || "-"}
+                  <div className="flex flex-col items-center gap-1">
+                    <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center font-black text-sm
+                      ${item.grade?.startsWith("A") ? "border-emerald-400 bg-emerald-50 text-emerald-600" :
+                        item.grade?.startsWith("B") ? "border-blue-400 bg-blue-50 text-blue-600" :
+                        item.grade?.startsWith("C") ? "border-slate-400 bg-slate-50 text-slate-600" :
+                        item.grade ? "border-red-400 bg-red-50 text-red-500" :
+                        "border-emerald-400 bg-emerald-50 text-emerald-600"}`}>
+                      {item.grade || item.nilai || "-"}
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">{item.nilai || "-"}</span>
                   </div>
                   <button
                     className="w-10 h-10 rounded-full flex items-center justify-center text-slate-400 transition"
