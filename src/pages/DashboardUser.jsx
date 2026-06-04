@@ -13,6 +13,7 @@ import {
   Award,
   Clock,
   ChevronRight,
+  ChevronLeft,
   UploadCloud,
   X,
   Loader2,
@@ -37,6 +38,7 @@ export default function DashboardUser() {
   const [isUploading, setIsUploading] = useState(false);
   const [simulations, setSimulations] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [user, setUser] = useState(auth.currentUser);
   const [loading, setLoading] = useState(!auth.currentUser);
@@ -89,13 +91,6 @@ export default function DashboardUser() {
     try {
       const data = await fetchQuestionsFromPDF(selectedFile);
       if (data.questions && data.questions.length > 0) {
-        // await saveSimulation({
-        //   uid: user.uid,
-        //   judul: selectedFile.name,
-        //   nilai: "-",
-        //   feedback: "Simulasi dimulai",
-        //   mode: "AI Killer",
-        // });
         window.fileSkripsiTitipan = selectedFile;
         window.fileSkripsiNama = selectedFile.name;
         navigate("/dashboard-ujian", { state: { pertanyaan: data.questions } });
@@ -123,7 +118,7 @@ export default function DashboardUser() {
 
   const handleMenuClick = (menu) => {
     setActiveMenu(menu);
-    setSidebarOpen(false); // tutup sidebar mobile saat pilih menu
+    setSidebarOpen(false);
   };
 
   if (loading)
@@ -244,17 +239,41 @@ export default function DashboardUser() {
 
       {/* ============ SIDEBAR ============ */}
       <aside
-        className={`dash-sidebar fixed left-0 top-0 h-screen flex flex-col justify-between transition-transform duration-300
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 w-64`}
+        className={`dash-sidebar fixed left-0 top-0 h-screen flex flex-col justify-between transition-all duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0
+          ${sidebarCollapsed ? "w-16" : "w-64"}`}
         style={{ zIndex: 60 }}
       >
-        <div className="p-6">
+        <div className={`p-4 relative ${sidebarCollapsed ? "flex flex-col items-center" : "p-6"}`}>
+
+          {/* Tombol Toggle Collapse - hanya tampil di desktop */}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="hidden md:flex absolute top-5 right-[-12px] w-6 h-6 rounded-full items-center justify-center text-blue-400 hover:text-blue-600 transition"
+            style={{
+              background: "rgba(255,255,255,0.9)",
+              border: "1px solid rgba(147,197,253,0.5)",
+              boxShadow: "0 2px 6px rgba(59,130,246,0.15)",
+            }}
+          >
+            {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+          </button>
+
           {/* Logo */}
-          <div className="flex items-center gap-3 mb-12">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={{ background: "rgba(255,255,255,0.7)", border: "1px solid rgba(147,197,253,0.5)", boxShadow: "0 0 20px rgba(96,165,250,0.25)" }}>
+          <div className={`flex items-center gap-3 ${sidebarCollapsed ? "mb-8 justify-center" : "mb-12"}`}>
+            <div
+              className="w-9 h-9 min-w-[36px] rounded-xl flex items-center justify-center relative"
+              style={{
+                background: "rgba(255,255,255,0.7)",
+                border: "1px solid rgba(147,197,253,0.5)",
+                boxShadow: "0 0 20px rgba(96,165,250,0.25)",
+              }}
+            >
               <div className="w-3.5 h-3.5 bg-gradient-to-tr from-blue-400 via-sky-400 to-cyan-300 rotate-45 rounded-[2px]"></div>
             </div>
-            <span className="font-bold text-lg text-slate-800">Skripsivibe AI</span>
+            {!sidebarCollapsed && (
+              <span className="font-bold text-lg text-slate-800 whitespace-nowrap">Skripsivibe AI</span>
+            )}
           </div>
 
           {/* Nav */}
@@ -263,37 +282,54 @@ export default function DashboardUser() {
               <button
                 key={item.id}
                 onClick={() => handleMenuClick(item.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-semibold text-sm ${activeMenu === item.id ? "dash-nav-active" : "dash-nav-idle"}`}
+                title={sidebarCollapsed ? item.label : undefined}
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition font-semibold text-sm
+                  ${sidebarCollapsed ? "justify-center" : ""}
+                  ${activeMenu === item.id ? "dash-nav-active" : "dash-nav-idle"}`}
               >
                 {item.icon}
-                {item.label}
+                {!sidebarCollapsed && item.label}
               </button>
             ))}
           </nav>
         </div>
 
         {/* User Info + Logout */}
-        <div className="p-6" style={{ borderTop: "1px solid rgba(147,197,253,0.4)" }}>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white" style={{ background: "linear-gradient(135deg, #3b82f6, #0ea5e9)" }}>
+        <div
+          className={`p-4 ${sidebarCollapsed ? "flex flex-col items-center" : "p-6"}`}
+          style={{ borderTop: "1px solid rgba(147,197,253,0.4)" }}
+        >
+          <div className={`flex items-center gap-3 mb-4 ${sidebarCollapsed ? "justify-center" : ""}`}>
+            <div
+              className="w-10 h-10 min-w-[40px] rounded-full flex items-center justify-center font-bold text-white"
+              style={{ background: "linear-gradient(135deg, #3b82f6, #0ea5e9)" }}
+            >
               {initials}
             </div>
-            <div>
-              <p className="font-bold text-slate-800">{userName}</p>
-              <p className="text-xs text-slate-400">Mahasiswa</p>
-            </div>
+            {!sidebarCollapsed && (
+              <div>
+                <p className="font-bold text-slate-800">{userName}</p>
+                <p className="text-xs text-slate-400">Mahasiswa</p>
+              </div>
+            )}
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
+            title={sidebarCollapsed ? "Keluar" : undefined}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-transparent hover:border-red-200
+              ${sidebarCollapsed ? "w-10 h-10 p-0" : "w-full"}`}
           >
-            <LogOut size={16} /> Keluar
+            <LogOut size={16} />
+            {!sidebarCollapsed && "Keluar"}
           </button>
         </div>
       </aside>
 
       {/* ============ MAIN CONTENT ============ */}
-      <main className="flex-1 md:ml-64 p-6 md:p-10 relative overflow-y-auto" style={{ zIndex: 10 }}>
+      <main
+        className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? "md:ml-16" : "md:ml-64"} p-6 md:p-10 relative overflow-y-auto`}
+        style={{ zIndex: 10 }}
+      >
 
         {/* Tombol hamburger untuk mobile */}
         <button
@@ -356,7 +392,6 @@ export default function DashboardUser() {
                   </div>
                   <p className="text-slate-400 text-xs">Grade & Nilai Rata-rata</p>
                   <div className="flex items-center gap-3 mt-2">
-                    {/* Lingkaran Grade */}
                     <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center font-black text-xl shrink-0
                       ${gradeRata?.startsWith("A") ? "border-emerald-400 bg-emerald-50 text-emerald-600" :
                         gradeRata?.startsWith("B") ? "border-blue-400 bg-blue-50 text-blue-600" :
@@ -365,14 +400,13 @@ export default function DashboardUser() {
                         "border-slate-200 bg-slate-50 text-slate-400"}`}>
                       {gradeRata ?? "-"}
                     </div>
-                    {/* Nilai Angka */}
                     <div className="flex flex-col">
-                      <span className={`text-2xl font-black text-slate-800`}>
+                      <span className="text-2xl font-black text-slate-800">
                         {nilaiRata !== null ? nilaiRata : "-"}
                       </span>
                     </div>
                   </div>
-                </div>             
+                </div>
                 <div className="dash-stat rounded-2xl p-6">
                   <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center mb-4"><Clock className="text-sky-400" size={20} /></div>
                   <p className="text-slate-400 text-sm">Total Latihan</p>
