@@ -35,6 +35,7 @@ router.get("/:uid", async (req, res) => {
     const snapshot = await db
       .collection("simulations")
       .where("uid", "==", uid)
+      .orderBy("createdAt", "desc")
       .get();
 
     const simulations = [];

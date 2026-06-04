@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-// IMPORT FUNGSI FIREBASE & API DARI EDWDIAN
 import { saveSimulation, getUserSimulations } from "../services/apiSimulations.js";
-import { auth } from "../firebase/config.js";
-import { signOut, onAuthStateChanged } from "firebase/auth";
-import { fetchQuestionsFromPDF } from "../utils/apiService";
-
-// IMPORT KOMPONEN TAB DARI EDWDIAN
-import Pengaturan from "./Pengaturan";
-import Riwayat from "./Riwayat";
 
 import {
   LayoutDashboard,
@@ -28,10 +20,17 @@ import {
   Menu,
 } from "lucide-react";
 
+import { auth } from "../firebase/config.js";
+import { signOut, onAuthStateChanged } from "firebase/auth";
+import { fetchQuestionsFromPDF } from "../utils/apiService";
+
+// Import komponen tab
+import Pengaturan from "./Pengaturan";
+import Riwayat from "./Riwayat";
+
 export default function DashboardUser() {
   const navigate = useNavigate();
 
-  // STATE GABUNGAN
   const [activeMenu, setActiveMenu] = useState("dashboard");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -40,7 +39,7 @@ export default function DashboardUser() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [user, setUser] = useState(auth.currentUser);
-  const [loading, setLoading] = useState(true); // Default loading true untuk cek auth
+  const [loading, setLoading] = useState(!auth.currentUser);
   const userName = user?.displayName || "User";
 
   const initials =
@@ -51,7 +50,7 @@ export default function DashboardUser() {
       .toUpperCase()
       .slice(0, 2) || "U";
 
-  // 1. CEK LOGIN (LOGIKA EDWDIAN)
+  // Cek login + redirect kalau belum login/verified
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser || !currentUser.emailVerified) {
@@ -62,19 +61,19 @@ export default function DashboardUser() {
       setLoading(false);
     });
     return () => unsub();
-  }, [navigate]);
+  }, []);
 
-  // 2. AMBIL DATA RIWAYAT DARI FIRESTORE (LOGIKA EDWDIAN)
+  // Ambil data simulasi dari Firestore
   useEffect(() => {
     const fetchData = async () => {
-      if (!user) return;
-      const data = await getUserSimulations(user.uid);
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const data = await getUserSimulations(currentUser.uid);
       setSimulations(data);
     };
-    if (user) fetchData();
-  }, [user]);
+    fetchData();
+  }, []);
 
-  // 3. FUNGSI UPLOAD & START SIMULASI (GABUNGAN UI FAUZAN & LOGIC EDWDIAN)
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file && file.type === "application/pdf") {
@@ -85,26 +84,21 @@ export default function DashboardUser() {
   };
 
   const handleStartSimulation = async () => {
-    if (!selectedFile || !user) return;
+    if (!selectedFile) return;
     setIsUploading(true);
-
     try {
       const data = await fetchQuestionsFromPDF(selectedFile);
       if (data.questions && data.questions.length > 0) {
-        
-        // Simpan data awal ke Firestore (Logic Edwdian)
-        await saveSimulation({
-          uid: user.uid,
-          judul: selectedFile.name,
-          nilai: "-",
-          feedback: "Simulasi dimulai",
-          mode: "AI Killer",
-        });
-
-        // Titipkan file & pindah ke Dashboard Ujian (Logic Fauzan)
+        // await saveSimulation({
+        //   uid: user.uid,
+        //   judul: selectedFile.name,
+        //   nilai: "-",
+        //   feedback: "Simulasi dimulai",
+        //   mode: "AI Killer",
+        // });
         window.fileSkripsiTitipan = selectedFile;
+        window.fileSkripsiNama = selectedFile.name;
         navigate("/dashboard-ujian", { state: { pertanyaan: data.questions } });
-        
       } else {
         alert("Gagal mendapatkan pertanyaan dari PDF.");
         setIsUploading(false);
@@ -129,47 +123,82 @@ export default function DashboardUser() {
 
   const handleMenuClick = (menu) => {
     setActiveMenu(menu);
-    setSidebarOpen(false); // Tutup sidebar mobile saat menu dipilih
+    setSidebarOpen(false); // tutup sidebar mobile saat pilih menu
   };
 
-  // TAMPILAN LOADING JIKA SEDANG CEK AUTH
-  if (loading) {
+  if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(160deg, #eef7ff 0%, #dceeff 25%, #cfe7ff 55%, #edf7ff 100%)" }}>
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "linear-gradient(160deg, #eef7ff 0%, #dceeff 25%, #cfe7ff 55%, #edf7ff 100%)" }}
+      >
+        <div className="w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
-  }
+
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
+    { id: "history", label: "Riwayat", icon: <History size={18} /> },
+    { id: "settings", label: "Pengaturan", icon: <Settings size={18} /> },
+  ];
+
+  const safeSimulations = Array.isArray(simulations) ? simulations : [];
+  const totalMenit = Math.round(
+    safeSimulations.reduce((acc, s) => acc + (s.durasi || 0), 0) / 60
+  );
+  const nilaiAngka = safeSimulations
+    .map((s) => parseInt(s.nilai))
+    .filter((n) => !isNaN(n));
+  const nilaiRata =
+    nilaiAngka.length > 0
+      ? Math.round(nilaiAngka.reduce((a, b) => a + b, 0) / nilaiAngka.length)
+      : null;
+
+  const getGradeFromNilai = (nilai) => {
+    if (nilai >= 85) return "A";
+    if (nilai >= 80) return "A-";
+    if (nilai >= 75) return "B+";
+    if (nilai >= 70) return "B";
+    if (nilai >= 65) return "C+";
+    if (nilai >= 60) return "C";
+    return "D";
+  };
+
+  const gradeRata = nilaiRata !== null ? getGradeFromNilai(nilaiRata) : null;
 
   return (
-    <div className="min-h-screen text-slate-800 flex overflow-hidden relative font-sans" style={{ background: 'linear-gradient(160deg, #eef7ff 0%, #dceeff 25%, #cfe7ff 55%, #edf7ff 100%)' }}>
+    <div
+      className="min-h-screen text-slate-800 flex overflow-hidden relative font-sans"
+      style={{ background: "linear-gradient(160deg, #eef7ff 0%, #dceeff 25%, #cfe7ff 55%, #edf7ff 100%)" }}
+    >
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          .dash-sidebar { background: rgba(255,255,255,0.75); backdrop-filter: blur(20px); border-right: 1px solid rgba(147,197,253,0.4); }
+          .dash-nav-active { background: rgba(219,234,254,0.8); border: 1px solid rgba(147,197,253,0.5); color: #2563eb; }
+          .dash-nav-idle { color: #64748b; }
+          .dash-nav-idle:hover { background: rgba(239,246,255,0.7); color: #3b82f6; }
+          .dash-card { background: rgba(255,255,255,0.72); backdrop-filter: blur(16px); border: 1px solid rgba(147,197,253,0.4); box-shadow: 0 8px 24px rgba(15,23,42,0.06), 0 2px 8px rgba(59,130,246,0.06); }
+          .dash-stat { background: rgba(255,255,255,0.72); backdrop-filter: blur(16px); border: 1px solid rgba(147,197,253,0.35); box-shadow: 0 8px 24px rgba(15,23,42,0.06), 0 2px 8px rgba(59,130,246,0.06); }
+          .dash-modal-overlay { background: rgba(219,234,254,0.4); backdrop-filter: blur(12px); }
+          .dash-modal { background: rgba(255,255,255,0.92); backdrop-filter: blur(24px); border: 1px solid rgba(147,197,253,0.5); }
+        `,
+      }} />
 
-      {/* STYLE CSS KHUSUS FAUZAN */}
-      <style dangerouslySetInnerHTML={{__html: `
-        .dash-sidebar { background: rgba(255,255,255,0.75); backdrop-filter: blur(20px); border-right: 1px solid rgba(147,197,253,0.4); }
-        .dash-nav-active { background: rgba(219,234,254,0.8); border: 1px solid rgba(147,197,253,0.5); color: #2563eb; }
-        .dash-nav-idle { color: #64748b; }
-        .dash-nav-idle:hover { background: rgba(239,246,255,0.7); color: #3b82f6; }
-        .dash-card { background: rgba(255,255,255,0.72); backdrop-filter: blur(16px); border: 1px solid rgba(147,197,253,0.4); box-shadow: 0 8px 24px rgba(15,23,42,0.06), 0 2px 8px rgba(59,130,246,0.06); }
-        .dash-stat { background: rgba(255,255,255,0.72); backdrop-filter: blur(16px); border: 1px solid rgba(147,197,253,0.35); box-shadow: 0 8px 24px rgba(15,23,42,0.06), 0 2px 8px rgba(59,130,246,0.06); }
-        .dash-modal-overlay { background: rgba(219,234,254,0.4); backdrop-filter: blur(12px); }
-        .dash-modal { background: rgba(255,255,255,0.92); backdrop-filter: blur(24px); border: 1px solid rgba(147,197,253,0.5); }
-      `}} />
-
-      {/* BACKGROUND DEKORASI */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex: 0}}>
-        <div className="absolute top-[-8%] left-[-5%] w-[520px] h-[520px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(147,197,253,0.28) 0%, transparent 70%)' }}></div>
-        <div className="absolute top-[25%] right-[-8%] w-[600px] h-[600px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(186,230,255,0.22) 0%, transparent 70%)' }}></div>
-        <div className="absolute bottom-[5%] left-[5%] w-[450px] h-[450px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(224,242,254,0.35) 0%, transparent 70%)' }}></div>
-        <div className="absolute top-[60%] left-[40%] w-[350px] h-[350px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(186,230,255,0.18) 0%, transparent 70%)' }}></div>
+      {/* Background blobs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
+        <div className="absolute top-[-8%] left-[-5%] w-[520px] h-[520px] rounded-full" style={{ background: "radial-gradient(circle, rgba(147,197,253,0.28) 0%, transparent 70%)" }}></div>
+        <div className="absolute top-[25%] right-[-8%] w-[600px] h-[600px] rounded-full" style={{ background: "radial-gradient(circle, rgba(186,230,255,0.22) 0%, transparent 70%)" }}></div>
+        <div className="absolute bottom-[5%] left-[5%] w-[450px] h-[450px] rounded-full" style={{ background: "radial-gradient(circle, rgba(224,242,254,0.35) 0%, transparent 70%)" }}></div>
       </div>
 
-      {/* MODAL UPLOAD (UI FAUZAN) */}
+      {/* ============ MODAL UPLOAD ============ */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 dash-modal-overlay" onClick={() => !isUploading && setIsModalOpen(false)} />
-          <div className="dash-modal relative w-full max-w-lg rounded-3xl p-8 shadow-2xl z-10" style={{ boxShadow: '0 20px 60px rgba(59,130,246,0.15)' }}>
-            <button onClick={() => setIsModalOpen(false)} disabled={isUploading} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700"><X size={20} /></button>
+          <div className="dash-modal relative w-full max-w-lg rounded-3xl p-8 shadow-2xl z-10" style={{ boxShadow: "0 20px 60px rgba(59,130,246,0.15)" }}>
+            <button onClick={() => setIsModalOpen(false)} disabled={isUploading} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
+              <X size={20} />
+            </button>
             <div className="text-center mb-6">
               <h2 className="text-2xl font-bold mb-2 text-slate-800">Upload Draft Skripsi</h2>
               <p className="text-slate-400 text-sm">Upload file PDF untuk memulai simulasi sidang</p>
@@ -194,58 +223,90 @@ export default function DashboardUser() {
                 </div>
               )}
             </div>
-            <button onClick={handleStartSimulation} disabled={!selectedFile || isUploading} className="w-full mt-6 font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2 text-white" style={{ background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)', boxShadow: '0 4px 15px rgba(59,130,246,0.35)' }}>
+            <button
+              onClick={handleStartSimulation}
+              disabled={!selectedFile || isUploading}
+              className="w-full mt-6 font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2 text-white"
+              style={{ background: "linear-gradient(135deg, #3b82f6, #0ea5e9)", boxShadow: "0 4px 15px rgba(59,130,246,0.35)" }}
+            >
               {isUploading ? <><Loader2 size={18} className="animate-spin" /> Memproses...</> : "Mulai Simulasi"}
             </button>
           </div>
         </div>
       )}
 
-      {/* OVERLAY SIDEBAR MOBILE (EDWDIAN) */}
+      {/* ============ SIDEBAR MOBILE OVERLAY ============ */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-[50] md:hidden" onClick={() => setSidebarOpen(false)}>
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
         </div>
       )}
 
-      {/* SIDEBAR */}
-      <aside className={`dash-sidebar fixed left-0 top-0 h-screen flex flex-col justify-between transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 w-64`} style={{ zIndex: 60 }}>
+      {/* ============ SIDEBAR ============ */}
+      <aside
+        className={`dash-sidebar fixed left-0 top-0 h-screen flex flex-col justify-between transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 w-64`}
+        style={{ zIndex: 60 }}
+      >
         <div className="p-6">
+          {/* Logo */}
           <div className="flex items-center gap-3 mb-12">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(147,197,253,0.5)', boxShadow: '0 0 20px rgba(96,165,250,0.25)' }}>
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center relative" style={{ background: "rgba(255,255,255,0.7)", border: "1px solid rgba(147,197,253,0.5)", boxShadow: "0 0 20px rgba(96,165,250,0.25)" }}>
               <div className="w-3.5 h-3.5 bg-gradient-to-tr from-blue-400 via-sky-400 to-cyan-300 rotate-45 rounded-[2px]"></div>
             </div>
             <span className="font-bold text-lg text-slate-800">Skripsivibe AI</span>
           </div>
+
+          {/* Nav */}
           <nav className="space-y-2">
-            <button onClick={() => handleMenuClick("dashboard")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-semibold text-sm ${activeMenu === "dashboard" ? "dash-nav-active" : "dash-nav-idle"}`}><LayoutDashboard size={18} />Dashboard</button>
-            <button onClick={() => handleMenuClick("history")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-semibold text-sm ${activeMenu === "history" ? "dash-nav-active" : "dash-nav-idle"}`}><History size={18} />Riwayat</button>
-            <button onClick={() => handleMenuClick("settings")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-semibold text-sm ${activeMenu === "settings" ? "dash-nav-active" : "dash-nav-idle"}`}><Settings size={18} />Pengaturan</button>
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => handleMenuClick(item.id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-semibold text-sm ${activeMenu === item.id ? "dash-nav-active" : "dash-nav-idle"}`}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
           </nav>
         </div>
-        <div className="p-6" style={{ borderTop: '1px solid rgba(147,197,253,0.4)' }}>
+
+        {/* User Info + Logout */}
+        <div className="p-6" style={{ borderTop: "1px solid rgba(147,197,253,0.4)" }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white" style={{ background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)' }}>{initials}</div>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white" style={{ background: "linear-gradient(135deg, #3b82f6, #0ea5e9)" }}>
+              {initials}
+            </div>
             <div>
               <p className="font-bold text-slate-800">{userName}</p>
               <p className="text-xs text-slate-400">Mahasiswa</p>
             </div>
           </div>
-          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"><LogOut size={16} />Keluar</button>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
+          >
+            <LogOut size={16} /> Keluar
+          </button>
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* ============ MAIN CONTENT ============ */}
       <main className="flex-1 md:ml-64 p-6 md:p-10 relative overflow-y-auto" style={{ zIndex: 10 }}>
-        
-        {/* TOMBOL HAMBURGER MOBILE */}
-        <button className="md:hidden mb-4 p-2 rounded-xl text-slate-600" style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(147,197,253,0.35)" }} onClick={() => setSidebarOpen(true)}>
+
+        {/* Tombol hamburger untuk mobile */}
+        <button
+          className="md:hidden mb-4 p-2 rounded-xl text-slate-600"
+          style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(147,197,253,0.35)" }}
+          onClick={() => setSidebarOpen(true)}
+        >
           <Menu size={20} />
         </button>
 
         <div className="relative z-10 max-w-6xl mx-auto space-y-10">
-          
-          {/* ======================= TAB DASHBOARD ======================= */}
+
+          {/* ===== TAB: DASHBOARD ===== */}
           {activeMenu === "dashboard" && (
             <>
               <header className="flex justify-between items-end">
@@ -254,58 +315,79 @@ export default function DashboardUser() {
                   <h1 className="text-4xl font-black text-slate-800">Halo, {userName} 👋</h1>
                   <p className="text-slate-400 mt-2">Siap menghadapi simulasi sidang hari ini?</p>
                 </div>
-                <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(12px)', border: '1px solid rgba(147,197,253,0.4)' }}>
+                <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg" style={{ background: "rgba(255,255,255,0.65)", backdropFilter: "blur(12px)", border: "1px solid rgba(147,197,253,0.4)" }}>
                   <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
                   <span className="text-sm text-slate-500 font-semibold">AI Sistem Active</span>
                 </div>
               </header>
 
+              {/* Banner Simulasi */}
               <section className="relative rounded-3xl p-8 overflow-hidden bg-white/75 backdrop-blur-2xl border border-blue-100/80 shadow-[0_12px_32px_rgba(15,23,42,0.08),0_4px_12px_rgba(59,130,246,0.08)]">
-                <div className="absolute top-[-40px] right-[-40px] w-72 h-72 rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(191,219,254,0.18) 0%, transparent 72%)' }}></div>
+                <div className="absolute top-[-40px] right-[-40px] w-72 h-72 rounded-full pointer-events-none" style={{ background: "radial-gradient(circle, rgba(191,219,254,0.18) 0%, transparent 72%)" }}></div>
                 <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
                   <div className="max-w-xl">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sky-600 text-xs font-bold uppercase tracking-widest mb-4" style={{ background: 'rgba(224,242,254,0.8)', border: '1px solid rgba(125,211,252,0.5)' }}>
-                      <Play size={10} className="fill-current" />Simulasi Baru
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sky-600 text-xs font-bold uppercase tracking-widest mb-4" style={{ background: "rgba(224,242,254,0.8)", border: "1px solid rgba(125,211,252,0.5)" }}>
+                      <Play size={10} className="fill-current" /> Simulasi Baru
                     </div>
                     <h2 className="text-3xl font-bold mb-3 text-slate-800">Mulai Simulasi Sidang</h2>
                     <p className="text-slate-500 leading-relaxed font-medium">Upload draft skripsi terbaru dan mulai latihan sidang bersama AI.</p>
                   </div>
-                  <button onClick={() => setIsModalOpen(true)} className="text-white px-8 py-4 rounded-xl font-bold hover:opacity-90 transition flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)', boxShadow: '0 8px 24px rgba(59,130,246,0.35)' }}>
-                    Mulai Ujian <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center"><ChevronRight size={16} /></div>
+                  <button
+                    onClick={() => setIsModalOpen(true)}
+                    className="text-white px-8 py-4 rounded-xl font-bold hover:opacity-90 transition flex items-center gap-3"
+                    style={{ background: "linear-gradient(135deg, #3b82f6, #0ea5e9)", boxShadow: "0 8px 24px rgba(59,130,246,0.35)" }}
+                  >
+                    Mulai Ujian
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center"><ChevronRight size={16} /></div>
                   </button>
                 </div>
               </section>
-              
-              {/* STATS (Data Asli Firebase) */}
+
+              {/* Statistik */}
               <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="dash-stat rounded-2xl p-6">
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center mb-4">
-                    <History className="text-blue-400" size={20} />
-                  </div>
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center mb-4"><History className="text-blue-400" size={20} /></div>
                   <p className="text-slate-400 text-sm">Total Simulasi</p>
                   <h3 className="text-3xl font-bold mt-2 text-slate-800">{simulations.length}</h3>
                 </div>
-                <div className="dash-stat rounded-2xl p-6">
-                  <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center mb-4">
-                    <Award className="text-emerald-500" size={20} />
+                <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
+                  <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center mb-3">
+                    <Award className="text-emerald-500" size={18} />
                   </div>
-                  <p className="text-slate-400 text-sm">Nilai Rata-rata</p>
-                  <h3 className="text-3xl font-bold mt-2 text-slate-800">-</h3>
-                </div>
-                <div className="dash-stat rounded-2xl p-6">
-                  <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center mb-4">
-                    <Clock className="text-sky-400" size={20} />
+                  <p className="text-slate-400 text-xs">Grade & Nilai Rata-rata</p>
+                  <div className="flex items-center gap-3 mt-2">
+                    {/* Lingkaran Grade */}
+                    <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center font-black text-xl shrink-0
+                      ${gradeRata?.startsWith("A") ? "border-emerald-400 bg-emerald-50 text-emerald-600" :
+                        gradeRata?.startsWith("B") ? "border-blue-400 bg-blue-50 text-blue-600" :
+                        gradeRata?.startsWith("C") ? "border-slate-400 bg-slate-50 text-slate-600" :
+                        gradeRata ? "border-red-400 bg-red-50 text-red-500" :
+                        "border-slate-200 bg-slate-50 text-slate-400"}`}>
+                      {gradeRata ?? "-"}
+                    </div>
+                    {/* Nilai Angka */}
+                    <div className="flex flex-col">
+                      <span className={`text-2xl font-black text-slate-800`}>
+                        {nilaiRata !== null ? nilaiRata : "-"}
+                      </span>
+                    </div>
                   </div>
+                </div>             
+                <div className="dash-stat rounded-2xl p-6">
+                  <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center mb-4"><Clock className="text-sky-400" size={20} /></div>
                   <p className="text-slate-400 text-sm">Total Latihan</p>
-                  <h3 className="text-3xl font-bold mt-2 text-slate-800">0 Menit</h3>
+                  <h3 className="text-3xl font-bold mt-2 text-slate-800">{totalMenit} Menit</h3>
                 </div>
               </section>
 
-              {/* HISTORY (Data Asli Firebase) */}
+              {/* Riwayat Singkat di Dashboard */}
               <section>
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-2xl font-bold text-slate-800">Riwayat Simulasi</h3>
-                  <button onClick={() => handleMenuClick("history")} className="text-blue-500 text-sm flex items-center gap-1 font-semibold hover:underline">
+                  <button
+                    onClick={() => setActiveMenu("history")}
+                    className="text-blue-500 text-sm flex items-center gap-1 font-semibold hover:underline"
+                  >
                     Lihat Semua <ChevronRight size={14} />
                   </button>
                 </div>
@@ -319,26 +401,28 @@ export default function DashboardUser() {
                       <div key={item.id} className="dash-card rounded-2xl p-6 transition">
                         <div className="flex flex-col md:flex-row justify-between gap-6">
                           <div className="flex gap-4">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(239,246,255,0.8)', border: '1px solid rgba(147,197,253,0.35)' }}>
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: "rgba(239,246,255,0.8)", border: "1px solid rgba(147,197,253,0.35)" }}>
                               <FileText className="text-blue-400" size={20} />
                             </div>
                             <div>
-                              <h4 className="font-bold text-lg mb-1 text-slate-800">{item.judul || "Draft Skripsi"}</h4>
+                              <h4 className="font-bold text-lg mb-1 text-slate-800">{item.judul}</h4>
                               <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                                <span>{item.date || "Baru saja"}</span>
-                                <span>{item.duration || "0 Menit"}</span>
-                                <span>{item.mode || "AI Killer"}</span>
+                                <span>{item.date}</span>
+                                <span>{item.duration}</span>
+                                <span>{item.mode}</span>
                               </div>
-                              <p className="text-sm text-slate-500 mt-3">{item.feedback || "Sedang memproses evaluasi..."}</p>
+                              <p className="text-sm text-slate-500 mt-3">{item.feedback}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-4">
                             <div className="w-12 h-12 rounded-full border-2 border-emerald-400 bg-emerald-50 flex items-center justify-center font-bold text-emerald-600">
-                              {item.nilai || "-"}
+                              {item.nilai}
                             </div>
-                            <button className="w-10 h-10 rounded-full hover:text-white transition flex items-center justify-center text-slate-400" style={{ background: 'rgba(219,234,254,0.6)', border: '1px solid rgba(147,197,253,0.4)' }}
-                              onMouseEnter={e => e.currentTarget.style.background = 'linear-gradient(135deg, #3b82f6, #0ea5e9)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'rgba(219,234,254,0.6)'}
+                            <button
+                              className="w-10 h-10 rounded-full flex items-center justify-center text-slate-400 transition"
+                              style={{ background: "rgba(219,234,254,0.6)", border: "1px solid rgba(147,197,253,0.4)" }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = "linear-gradient(135deg, #3b82f6, #0ea5e9)")}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(219,234,254,0.6)")}
                             >
                               <ChevronRight size={18} />
                             </button>
@@ -352,8 +436,10 @@ export default function DashboardUser() {
             </>
           )}
 
-          {/* ======================= TAB LAIN ======================= */}
+          {/* ===== TAB: RIWAYAT ===== */}
           {activeMenu === "history" && <Riwayat />}
+
+          {/* ===== TAB: PENGATURAN ===== */}
           {activeMenu === "settings" && <Pengaturan />}
 
         </div>

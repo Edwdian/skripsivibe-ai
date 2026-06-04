@@ -135,7 +135,7 @@ export default function LandingPage() {
               <button onClick={() => scrollToSection("fitur")} className="flex items-center gap-1 hover:text-blue-600 transition-colors"> Fitur </button>
               <button onClick={() => scrollToSection("kampus")} className="flex items-center gap-1 hover:text-blue-600 transition-colors"> Kampus </button>
               <a onClick={() => scrollToSection("testi")} className="cursor-pointer hover:text-blue-600 transition-colors"> Testimoni </a>
-              <a onClick={() => scrollToSection("blog")} className="cursor-pointer hover:text-blue-600 transition-colors"> Blog </a>
+              <a onClick={() => scrollToSection("blog")} className="cursor-pointer hover:text-blue-600 transition-colors"> Langganan </a>
             </div>
           </div>
           <div>
@@ -609,6 +609,21 @@ export default function LandingPage() {
               </div>
             </section>
 
+            {/* BLOG */}
+            <section id="blog" className="relative w-full z-20 flex flex-col items-center mt-10 mb-32 px-6">
+              <div className="max-w-5xl w-full text-center">
+                <h2 className="text-3xl md:text-5xl font-bold text-slate-800 mb-4 tracking-tight">
+                  Berlangganan
+                </h2>
+
+                <p className="text-slate-400 mb-12">
+                  Tips sidang, revisi skripsi, dan persiapan mental mahasiswa.
+                </p>
+
+                
+              </div>
+            </section>
+
             {/* FAQ */}
             <section id="testi" className="scroll-mt-32 relative w-full z-20 flex flex-col items-center mt-10 mb-32 px-6">
               <div className="max-w-3xl w-full">
@@ -680,47 +695,7 @@ export default function LandingPage() {
               </div>
             </section>
 
-            {/* BLOG */}
-            <section id="blog" className="relative w-full z-20 flex flex-col items-center mt-10 mb-32 px-6">
-              <div className="max-w-5xl w-full text-center">
-                <h2 className="text-3xl md:text-5xl font-bold text-slate-800 mb-4 tracking-tight">
-                  Blog & Artikel
-                </h2>
-
-                <p className="text-slate-400 mb-12">
-                  Tips sidang, revisi skripsi, dan persiapan mental mahasiswa.
-                </p>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="p-6 rounded-3xl bg-white/70 border border-blue-100">
-                    <h3 className="font-bold text-slate-800 mb-2">
-                      Tips Menghadapi Sidang Skripsi
-                    </h3>
-                    <p className="text-sm text-slate-500">
-                      Cara mengurangi gugup saat presentasi di depan dosen penguji.
-                    </p>
-                  </div>
-
-                  <div className="p-6 rounded-3xl bg-white/70 border border-blue-100">
-                    <h3 className="font-bold text-slate-800 mb-2">
-                      Kesalahan Revisi yang Sering Terjadi
-                    </h3>
-                    <p className="text-sm text-slate-500">
-                      Hindari revisi berulang dengan memahami catatan dosen.
-                    </p>
-                  </div>
-
-                  <div className="p-6 rounded-3xl bg-white/70 border border-blue-100">
-                    <h3 className="font-bold text-slate-800 mb-2">
-                      Persiapan Mental Sebelum Sidang
-                    </h3>
-                    <p className="text-sm text-slate-500">
-                      Bangun rasa percaya diri sebelum menghadapi sidang akhir.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </section>
+            
 
             {/* FOOTER */}
             <footer className="w-full pt-16 pb-8 mt-10 text-left" style={{ borderTop: '1px solid rgba(147,197,253,0.4)' }}>
