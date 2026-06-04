@@ -21,7 +21,8 @@ import {
   Menu,
 } from "lucide-react";
 
-import { auth } from "../firebase/config.js";
+import { auth, db } from "../firebase/config.js";
+import { doc, onSnapshot } from "firebase/firestore";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { fetchQuestionsFromPDF } from "../utils/apiService";
 
@@ -42,6 +43,8 @@ export default function DashboardUser() {
 
   const [user, setUser] = useState(auth.currentUser);
   const [loading, setLoading] = useState(!auth.currentUser);
+  const [userStatus, setUserStatus] = useState("Mahasiswa");
+
   const userName = user?.displayName || "User";
 
   const initials =
@@ -53,17 +56,32 @@ export default function DashboardUser() {
       .slice(0, 2) || "U";
 
   // Cek login + redirect kalau belum login/verified
+ // SESUDAH
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser || !currentUser.emailVerified) {
-        navigate("/auth", { replace: true });
-        return;
+  let unsubSnapshot = null;
+
+  const unsub = onAuthStateChanged(auth, (currentUser) => {
+    if (!currentUser || !currentUser.emailVerified) {
+      navigate("/auth", { replace: true });
+      return;
+    }
+    setUser(currentUser);
+    setLoading(false);
+
+    // Realtime listener
+    const userDocRef = doc(db, "users", currentUser.uid);
+    unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setUserStatus(docSnap.data().status || "Mahasiswa");
       }
-      setUser(currentUser);
-      setLoading(false);
     });
-    return () => unsub();
-  }, []);
+  });
+
+  return () => {
+    unsub();
+    if (unsubSnapshot) unsubSnapshot();
+  };
+}, []);
 
   // Ambil data simulasi dari Firestore
   useEffect(() => {
@@ -309,7 +327,8 @@ export default function DashboardUser() {
             {!sidebarCollapsed && (
               <div>
                 <p className="font-bold text-slate-800">{userName}</p>
-                <p className="text-xs text-slate-400">Mahasiswa</p>
+                {/* ✅ DIUBAH: dari hardcoded "Mahasiswa" jadi dynamic */}
+                <p className="text-xs text-slate-400">{userStatus}</p>
               </div>
             )}
           </div>
