@@ -14,7 +14,7 @@ import {
   ChevronUp
 } from "lucide-react";
 
-import { saveSimulation } from "../services/apiSimulations";
+import { saveSimulation, getUserSimulations } from "../services/apiSimulations";
 import { auth } from "../firebase/config";
 
 export default function DashboardHasil() {
@@ -118,25 +118,25 @@ export default function DashboardHasil() {
   else { grade_akhir = "D"; grade_color = "text-red-500"; grade_bg = "border-red-400 bg-red-50/50"; }
 
   // FUNGSI DOWNLOAD TRANSKRIP
-  const handleDownloadTranscript = () => {
-    const textContent = `=== TRANSKRIP SIMULASI SIDANG AI ===\n\n` +
-      `[PRESENTASI MAHASISWA]\n${transkrip.presentasi_transcript}\n\n` +
-      `[JAWABAN QNA 1]\n${transkrip.jawaban_1}\n\n` +
-      `[JAWABAN QNA 2]\n${transkrip.jawaban_2}\n\n` +
-      `[JAWABAN QNA 3]\n${transkrip.jawaban_3}\n`;
+  // const handleDownloadTranscript = () => {
+  //   const textContent = `=== TRANSKRIP SIMULASI SIDANG AI ===\n\n` +
+  //     `[PRESENTASI MAHASISWA]\n${transkrip.presentasi_transcript}\n\n` +
+  //     `[JAWABAN QNA 1]\n${transkrip.jawaban_1}\n\n` +
+  //     `[JAWABAN QNA 2]\n${transkrip.jawaban_2}\n\n` +
+  //     `[JAWABAN QNA 3]\n${transkrip.jawaban_3}\n`;
 
-    const blob = new Blob([textContent], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
+  //   const blob = new Blob([textContent], { type: "text/plain" });
+  //   const url = URL.createObjectURL(blob);
     
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "Transkrip_Sidang_Skripsivibe.txt";
-    document.body.appendChild(link);
-    link.click(); 
+  //   const link = document.createElement("a");
+  //   link.href = url;
+  //   link.download = "Transkrip_Sidang_Skripsivibe.txt";
+  //   document.body.appendChild(link);
+  //   link.click(); 
     
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  //   document.body.removeChild(link);
+  //   URL.revokeObjectURL(url);
+  // };
 
   // ==========================================
   // 🚀 LOGIKA FEEDBACK GABUNGAN
@@ -220,6 +220,21 @@ export default function DashboardHasil() {
       
 
       try {
+
+        // CEK DUPLIKAT LANGSUNG KE FIRESTORE
+        const dataTersimpan = await getUserSimulations(currentUser.uid);
+        
+        // Validasi: Jika judul dan nilainya persis sama, anggap sudah tersimpan
+        const sudahPernahDisimpan = dataTersimpan.some(
+          (s) => s.judul === judulFile && String(s.nilai) === String(skor_akhir)
+        );
+
+        if (sudahPernahDisimpan) {
+          console.log("Simulasi ini sudah pernah disimpan sebelumnya. Mengabaikan duplikasi.");
+          setSudahDisimpan(true);
+          return; // Berhenti di sini, jangan panggil saveSimulation lagi
+        }
+
         await saveSimulation({
           uid: currentUser.uid,
           judul: judulFile,
@@ -231,6 +246,20 @@ export default function DashboardHasil() {
             "Simulasi selesai.",
           mode: "AI Killer",
           durasi: durasiDetik,
+
+          // ✅ Tambah data lengkap untuk pop up
+          p_materi: p_materi,
+          p_pede: p_pede,
+          p_qna: p_qna,
+          skor_presentasi: skor_presentasi,
+          status_paham: status_paham,
+          status_pede: status_pede,
+          evaluasi: {
+            unggul: evaluasiGabungan.unggul,
+            lemah: evaluasiGabungan.lemah,
+            strategi: evaluasiGabungan.strategi,
+          },
+          qnaList: qnaList,
         });
         setSudahDisimpan(true);
 
@@ -263,7 +292,7 @@ export default function DashboardHasil() {
 
       <div className="relative z-10 max-w-6xl mx-auto p-6 md:p-10 space-y-8 pb-20 mt-6">
 
-        {/* HEADER & TOMBOL DOWNLOAD */}
+        {/* HEADER */}
         <div className="relative z-30 mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <p className="text-blue-500 text-sm font-bold uppercase tracking-[4px] mb-2">
@@ -273,15 +302,6 @@ export default function DashboardHasil() {
               Evaluasi Sidang AI
             </h1>
           </div>
-          {/* Tombol Vibrant Blue Gradient */}
-          <button 
-            onClick={handleDownloadTranscript}
-            className="flex items-center justify-center gap-2 text-white px-6 py-3 rounded-xl font-bold shadow-[0_4px_15px_rgba(59,130,246,0.35)] hover:opacity-90 transition-all hover:scale-105"
-            style={{ background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)' }}
-          >
-            <Download size={18} />
-            Download Transkrip
-          </button>
         </div>
 
         {/* CARD UTAMA NILAI (Translucent Glassmorphism) */}
@@ -579,15 +599,6 @@ export default function DashboardHasil() {
 
       {/* TOMBOL AKSI BAWAH */}
         <div className="flex gap-3 pt-4 justify-end">
-          <button
-            onClick={handleDownloadTranscript}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white hover:opacity-90 transition hover:scale-105"
-            style={{ background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)', boxShadow: '0 4px 15px rgba(59,130,246,0.35)' }}
-          >
-            <Download size={18} />
-            Download Transkrip
-          </button>
-
           <button
             onClick={() => navigate("/dashboard-user")}
             className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-slate-700 hover:bg-white/90 transition hover:scale-105 border border-blue-200/50"
