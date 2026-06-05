@@ -44,6 +44,8 @@ export default function DashboardUser() {
   const [user, setUser] = useState(auth.currentUser);
   const [loading, setLoading] = useState(!auth.currentUser);
   const [userStatus, setUserStatus] = useState("Mahasiswa");
+  const [photoURL, setPhotoURL] = useState(null);
+  const [selectedHistory, setSelectedHistory] = useState(null);
 
   const userName = user?.displayName || "User";
 
@@ -55,44 +57,58 @@ export default function DashboardUser() {
       .toUpperCase()
       .slice(0, 2) || "U";
 
-  // Cek login + redirect kalau belum login/verified
- // SESUDAH
   useEffect(() => {
-  let unsubSnapshot = null;
+    const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+    link.type = 'image/png';
+    link.rel = 'icon';
+    link.href = 'https://res.cloudinary.com/doabehyrn/image/upload/v1780575299/skripsivibeai-logo_gdzxnq.png';
+    document.getElementsByTagName('head')[0].appendChild(link);
+    document.title = "Dashboard - Skripsivibe AI";
+  }, []);    
 
-  const unsub = onAuthStateChanged(auth, (currentUser) => {
-    if (!currentUser || !currentUser.emailVerified) {
-      navigate("/auth", { replace: true });
-      return;
-    }
-    setUser(currentUser);
-    setLoading(false);
+  useEffect(() => {
+      let unsubSnapshot = null;
 
-    // Realtime listener
-    const userDocRef = doc(db, "users", currentUser.uid);
-    unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setUserStatus(docSnap.data().status || "Mahasiswa");
-      }
-    });
-  });
+      const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+        if (!currentUser || !currentUser.emailVerified) {
+          navigate("/auth", { replace: true });
+          return;
+        }
+        setUser(currentUser);
+        setLoading(false);
 
-  return () => {
-    unsub();
-    if (unsubSnapshot) unsubSnapshot();
-  };
-}, []);
+        if (unsubSnapshot) unsubSnapshot();
 
-  // Ambil data simulasi dari Firestore
+        const userDocRef = doc(db, "users", currentUser.uid);
+        unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserStatus(data.status || "Mahasiswa");
+            setPhotoURL(data.photoURL || currentUser.photoURL || null); 
+          }
+        });
+      });
+
+      return () => {
+        unsubAuth();
+        if (unsubSnapshot) unsubSnapshot(); 
+      };
+    }, [navigate]);
+
   useEffect(() => {
     const fetchData = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
-      const data = await getUserSimulations(currentUser.uid);
-      setSimulations(data);
+      if (!user?.uid) return; 
+      
+      try {
+        const data = await getUserSimulations(user.uid);
+        setSimulations(data);
+      } catch (error) {
+        console.error("Gagal mengambil data simulasi:", error);
+      }
     };
+    
     fetchData();
-  }, []);
+  }, [user?.uid]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -248,6 +264,122 @@ export default function DashboardUser() {
         </div>
       )}
 
+      {/* ============ MODAL HASIL RIWAYAT (DASHBOARD) ============ */}
+      {selectedHistory && (
+        <div
+          className="fixed inset-0 z-[999] flex items-center justify-center p-4"
+          style={{ background: "rgba(15,23,42,0.55)", backdropFilter: "blur(8px)" }}
+          onClick={() => setSelectedHistory(null)}
+        >
+          <div
+            className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl"
+            style={{ background: "linear-gradient(160deg, #f0f8ff 0%, #e1f0fd 30%, #dbeeff 65%, #edf6ff 100%)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Sticky Header */}
+            <div
+              className="sticky top-0 z-10 flex items-center justify-between px-6 md:px-8 py-5 rounded-t-3xl border-b border-blue-100/80"
+              style={{ background: "rgba(255,255,255,0.88)", backdropFilter: "blur(16px)" }}
+            >
+              <div>
+                <p className="text-blue-500 text-[10px] font-black uppercase tracking-[4px]">Detail Hasil Simulasi</p>
+                <h2 className="text-base md:text-lg font-black text-slate-800 mt-0.5 line-clamp-1 max-w-sm md:max-w-lg">
+                  {selectedHistory.judul}
+                </h2>
+              </div>
+              <button
+                onClick={() => setSelectedHistory(null)}
+                className="w-10 h-10 rounded-full flex items-center justify-center text-slate-500 hover:bg-red-50 hover:text-red-500 transition-all border border-blue-100 shrink-0"
+                style={{ background: "rgba(255,255,255,0.9)" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 md:p-8 space-y-5">
+              {/* GRADE & SKOR UTAMA */}
+              <div
+                className="rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 border border-blue-200/50"
+                style={{ background: "rgba(255,255,255,0.78)", backdropFilter: "blur(16px)" }}
+              >
+                <div>
+                  <h3 className="text-xl font-black text-slate-800 mb-1">Grade Akhir</h3>
+                  <p className="text-slate-400 text-sm leading-relaxed">
+                    Nilai akhir dari penggabungan skor presentasi dan sesi QnA.
+                  </p>
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    {selectedHistory.mode && (
+                      <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-500 text-xs font-bold border border-blue-100">
+                        {selectedHistory.mode}
+                      </span>
+                    )}
+                    {selectedHistory.durasi && (
+                      <span className="px-3 py-1 rounded-full bg-sky-50 text-sky-500 text-xs font-bold border border-sky-100 flex items-center gap-1">
+                        <Clock size={11} />
+                        {Math.floor(selectedHistory.durasi / 60)}m {selectedHistory.durasi % 60}s presentasi
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-3 shrink-0">
+                  <div className={`w-24 h-24 rounded-full border-4 flex items-center justify-center shadow-lg ${
+                    selectedHistory.grade?.startsWith("A") ? "border-emerald-300 bg-emerald-50 text-emerald-500" :
+                    selectedHistory.grade?.startsWith("B") ? "border-blue-300 bg-blue-50 text-blue-500" :
+                    selectedHistory.grade?.startsWith("C") ? "border-slate-300 bg-slate-50 text-slate-600" :
+                    "border-red-400 bg-red-50 text-red-500"
+                  }`}>
+                    <span className={`text-5xl font-black`}>{selectedHistory.grade || "-"}</span>
+                  </div>
+                  <div
+                    className="px-5 py-2 rounded-full border border-blue-100 flex items-center gap-2"
+                    style={{ background: "rgba(255,255,255,0.95)" }}
+                  >
+                    <span className="text-slate-400 text-xs font-bold">Total Skor:</span>
+                    <span className="text-lg font-black text-slate-700">{selectedHistory.nilai ?? "-"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* STATISTIK RINGKAS */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-2xl p-5 border border-blue-200/50" style={{ background: "rgba(255,255,255,0.82)" }}>
+                  <p className="text-slate-400 text-xs">Pemahaman Materi</p>
+                  <h3 className="text-3xl font-black text-slate-800 mt-1">{selectedHistory.p_materi ?? "-"}%</h3>
+                </div>
+                <div className="rounded-2xl p-5 border border-blue-200/50" style={{ background: "rgba(255,255,255,0.82)" }}>
+                  <p className="text-slate-400 text-xs">Percaya Diri</p>
+                  <h3 className="text-3xl font-black text-slate-800 mt-1">{selectedHistory.p_pede ?? "-"}%</h3>
+                </div>
+                <div className="rounded-2xl p-5 border border-blue-200/50" style={{ background: "rgba(255,255,255,0.82)" }}>
+                  <p className="text-slate-400 text-xs">Akurasi QnA</p>
+                  <h3 className="text-3xl font-black text-slate-800 mt-1">{selectedHistory.p_qna ?? "-"}%</h3>
+                </div>
+              </div>
+
+              {/* FEEDBACK & TOMBOL DETAIL */}
+              <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+                <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2">
+                  <Award size={18} /> Ringkasan Feedback
+                </h4>
+                <p className="text-slate-600 text-sm leading-relaxed text-justify mb-4">
+                  {selectedHistory.feedback || "Tidak ada feedback ringkas yang tersimpan untuk simulasi ini."}
+                </p>
+                <button
+                  onClick={() => {
+                    setSelectedHistory(null);
+                    setActiveMenu("history");
+                  }}
+                  className="w-full py-3 rounded-xl bg-white text-blue-600 font-bold border border-blue-200 hover:bg-blue-50 transition flex items-center justify-center gap-2"
+                >
+                  Lihat Detail Evaluasi & QnA <ChevronRight size={16} />
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ============ SIDEBAR MOBILE OVERLAY ============ */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-[50] md:hidden" onClick={() => setSidebarOpen(false)}>
@@ -279,16 +411,11 @@ export default function DashboardUser() {
 
           {/* Logo */}
           <div className={`flex items-center gap-3 ${sidebarCollapsed ? "mb-8 justify-center" : "mb-12"}`}>
-            <div
-              className="w-9 h-9 min-w-[36px] rounded-xl flex items-center justify-center relative"
-              style={{
-                background: "rgba(255,255,255,0.7)",
-                border: "1px solid rgba(147,197,253,0.5)",
-                boxShadow: "0 0 20px rgba(96,165,250,0.25)",
-              }}
-            >
-              <div className="w-3.5 h-3.5 bg-gradient-to-tr from-blue-400 via-sky-400 to-cyan-300 rotate-45 rounded-[2px]"></div>
-            </div>
+            <img 
+                src="https://res.cloudinary.com/doabehyrn/image/upload/v1780575299/skripsivibeai-logo_gdzxnq.png" 
+                alt="Logo Skripsivibe AI" 
+                className="w-10 h-10 object-contain" 
+              />
             {!sidebarCollapsed && (
               <span className="font-bold text-lg text-slate-800 whitespace-nowrap">Skripsivibe AI</span>
             )}
@@ -318,16 +445,22 @@ export default function DashboardUser() {
           style={{ borderTop: "1px solid rgba(147,197,253,0.4)" }}
         >
           <div className={`flex items-center gap-3 mb-4 ${sidebarCollapsed ? "justify-center" : ""}`}>
+            {/* BAGIAN FOTO PROFIL YANG DISESUAIKAN */}
             <div
-              className="w-10 h-10 min-w-[40px] rounded-full flex items-center justify-center font-bold text-white"
+              className="w-10 h-10 min-w-[40px] rounded-full flex items-center justify-center font-bold text-white overflow-hidden shadow-sm shrink-0"
               style={{ background: "linear-gradient(135deg, #3b82f6, #0ea5e9)" }}
             >
-              {initials}
+              {photoURL ? (
+                <img src={photoURL} alt="Profil" className="w-full h-full object-cover" />
+              ) : (
+                initials
+              )}
             </div>
+            {/* ==================================== */}
+
             {!sidebarCollapsed && (
               <div>
                 <p className="font-bold text-slate-800">{userName}</p>
-                {/* ✅ DIUBAH: dari hardcoded "Mahasiswa" jadi dynamic */}
                 <p className="text-xs text-slate-400">{userStatus}</p>
               </div>
             )}
@@ -445,12 +578,12 @@ export default function DashboardUser() {
                   </button>
                 </div>
                 <div className="space-y-4">
-                  {simulations.length === 0 ? (
+                  {safeSimulations.length === 0 ? (
                     <div className="text-center py-10 dash-card rounded-2xl">
                       <p className="text-slate-400">Belum ada riwayat simulasi.</p>
                     </div>
                   ) : (
-                    simulations.slice(0, 3).map((item) => (
+                    safeSimulations.slice(0, 3).map((item) => (
                       <div key={item.id} className="dash-card rounded-2xl p-6 transition">
                         <div className="flex flex-col md:flex-row justify-between gap-6">
                           <div className="flex gap-4">
@@ -472,6 +605,7 @@ export default function DashboardUser() {
                               {item.nilai}
                             </div>
                             <button
+                              onClick={() => setSelectedHistory(item)}
                               className="w-10 h-10 rounded-full flex items-center justify-center text-slate-400 transition"
                               style={{ background: "rgba(219,234,254,0.6)", border: "1px solid rgba(147,197,253,0.4)" }}
                               onMouseEnter={(e) => (e.currentTarget.style.background = "linear-gradient(135deg, #3b82f6, #0ea5e9)")}

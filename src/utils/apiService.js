@@ -3,7 +3,7 @@ export const fetchQuestionsFromPDF = async (file) => {
   formData.append("file", file);
 
   try {
-    const response = await fetch("http://localhost:5000/api/gemini/generate-pertanyaan", {
+    const response = await fetch("https://skripsivibe-backend.onrender.com/api/gemini/generate-pertanyaan", {
       method: "POST",
       body: formData,
     });
@@ -24,12 +24,6 @@ export const sendToRenderModel = async (pdfFile, dataLengkap) => {
     const formData = new FormData();
     const teks_mahasiswa = dataLengkap.presentasi_transcript.trim();
 
-    console.log("CEK DATA SEBELUM DIKIRIM KE AI:");
-    console.log("1. Object File:", pdfFile);
-    console.log("2. Ukuran File PDF:", pdfFile ? (pdfFile.size / 1024).toFixed(2) + " KB" : "0 KB (RUSAK!)");
-    console.log("3. Teks Presentasi:", teks_mahasiswa !== "" ? teks_mahasiswa : "⚠️ KOSONG!");
-    // =======================================================
-
     formData.append("file_skripsi", pdfFile); 
     formData.append("teks_mahasiswa", teks_mahasiswa);
 
@@ -44,7 +38,6 @@ export const sendToRenderModel = async (pdfFile, dataLengkap) => {
     }
 
     const result = await response.json();
-    console.log("Berhasil! Hasil Prediksi dari Hugging Face:", result);
     
     return result;
 
@@ -98,7 +91,7 @@ export const evaluateQna = async (dataLengkap, questions = []) => {
   formData.append("jawaban_3", dataLengkap.jawaban_3 || "");
 
   try {
-    const response = await fetch("http://localhost:5000/api/gemini/evaluasi-qna", {
+    const response = await fetch("https://skripsivibe-backend.onrender.com/api/gemini/evaluasi-qna", {
       method: "POST",
       body: formData,
     });
@@ -109,7 +102,6 @@ export const evaluateQna = async (dataLengkap, questions = []) => {
     }
     
     const result = await response.json();
-    console.log("Berhasil! Hasil Evaluasi QnA dari Express:", result);
     
     return result; 
   } catch (error) {

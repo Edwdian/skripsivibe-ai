@@ -45,7 +45,6 @@ export default function DashboardUjian() {
     jawaban_3: ""
   });
 
-  // Ref untuk Persistent Stream (Mikrofon tetap nyala mencegah delay inisialisasi)
   const micStreamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recognitionRef = useRef(null); 
@@ -64,7 +63,7 @@ export default function DashboardUjian() {
   const videoRef = useRef(null);
 
   // =========================================================
-  // 1. INISIALISASI DATA & AKSES MIKROFON SEJAK AWAL (SINGLE LIFECYCLE)
+  // 1. INISIALISASI DATA & AKSES MIKROFON SEJAK AWAL
   // =========================================================
   useEffect(() => {
     const fileDariUser = window.fileSkripsiTitipan;
@@ -74,14 +73,12 @@ export default function DashboardUjian() {
       setSelectedFile(fileDariUser);
       setGeneratedQuestions(pertanyaanDariUser);
       
-      // Ambil akses mikrofon sejak awal halaman diload
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then((stream) => {
           micStreamRef.current = stream;
           setPhase("intro"); 
         })
         .catch((err) => {
-          console.error("Gagal mendapatkan akses mikrofon sejak awal:", err);
           alert("Aplikasi membutuhkan izin mikrofon yang aktif agar dapat melakukan transkripsi.");
           navigate("/dashboard-user");
         });
@@ -93,7 +90,6 @@ export default function DashboardUjian() {
       navigate("/dashboard-user"); 
     }
 
-    // Cleanup seluruh stream mikrofon saat meninggalkan dashboard
     return () => {
       if (micStreamRef.current) {
         micStreamRef.current.getTracks().forEach(track => track.stop());
@@ -172,7 +168,6 @@ export default function DashboardUjian() {
         nextVideo = 'mendengarkan'; 
         setIsEvaluating(true); 
         
-        // Kirim data hasil & total akumulasi durasi waktu pengerjaan
         Promise.all([
           sendToRenderModel(selectedFile, dataLengkap), 
           evaluateQna(dataLengkap, generatedQuestions)  
@@ -184,13 +179,12 @@ export default function DashboardUjian() {
                 hasilAI: hasilPrediksi, 
                 hasilQna: hasilQna,     
                 transkrip: dataLengkap,
-                durasiTotal: time // 🚀 KITA KIRIMKAN TOTAL DURASI DALAM DETIK!
+                durasiTotal: time 
               } 
             });
           })
           .catch(err => {
             setIsEvaluating(false);
-            console.error("Error Evaluasi API:", err);
             alert("Yah, gagal mengirim data evaluasi ke server AI.");
           });
         break;
@@ -232,24 +226,33 @@ export default function DashboardUjian() {
   };
 
   // =========================================================
-  // 3. TIMER TOTAL AKUMULATIF (PRESENTASI + TANYA JAWAB TERUS BERLANJUT)
+  // 3. TIMER TOTAL AKUMULATIF (JALAN TERUS DI LATAR BELAKANG)
   // =========================================================
   useEffect(() => {
     let timer;
+    
+    // Timer terus berjalan selama sesi masih aktif (termasuk saat QnA)
+    const isSessionActive = 
+      phase === 'presentation' || 
+      phase === 'transisi_manual' ||
+      phase.startsWith('qna_') || 
+      phase.startsWith('answering_') ||
+      phase === 'closing_video';
 
-    if (phase === 'presentation') {
+    if (isSessionActive) {
       timer = setInterval(() => {
         setTime((prev) => {
           if (prev >= MAX_TIME - 1) {
             clearInterval(timer);
-            handleManualNextPhase(); // ✅ otomatis lanjut saat waktu habis
+            // Otomatis pindah hanya jika waktu presentasi habis
+            if (phase === 'presentation') handleManualNextPhase(); 
             return MAX_TIME;
           }
           return prev + 1;
         });
       }, 1000);
     }
-      return () => clearInterval(timer);
+    return () => clearInterval(timer);
   }, [phase]);
 
   const MAX_TIME = 10 * 60;
@@ -261,7 +264,7 @@ export default function DashboardUjian() {
   };
 
   // =========================================================
-  // 4. TRIGGER MANUAL SELESAI (TANGKAP AUDIO VERBATIM INSTAN)
+  // 4. TRIGGER MANUAL SELESAI
   // =========================================================
   const handleManualNextPhase = () => {
     shouldListen.current = false;
@@ -278,7 +281,7 @@ export default function DashboardUjian() {
   };
 
   // =========================================================
-  // 5. HYBRID RECORDING LOGIC (MENGGUNAKAN PERSISTENT STREAM)
+  // 5. HYBRID RECORDING LOGIC
   // =========================================================
   useEffect(() => {
     currentPhaseRef.current = phase; 
@@ -286,7 +289,6 @@ export default function DashboardUjian() {
     const isUserTurn = phase === 'presentation' || phase.startsWith('answering_');
     shouldListen.current = isUserTurn && isMicOn && !isAiSpeaking;
 
-    // A. MEREKAM DENGAN STREAM UTAMA YANG SUDAH NYALA SEJAK AWAL
     if (shouldListen.current && micStreamRef.current && !mediaRecorderRef.current) {
       const mediaRecorder = new MediaRecorder(micStreamRef.current, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = mediaRecorder;
@@ -302,11 +304,9 @@ export default function DashboardUjian() {
         setIsProcessingAudio(true);
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
-        // Kirim audio murni instan ke Groq
         const textDariGroq = await transcribeAudioWithGroq(audioBlob);
         const currentPhase = currentPhaseRef.current;
         
-        // Filter agar jika text kosong tidak merusak model evaluasi
         const textHasil = textDariGroq.trim() !== "" ? textDariGroq : "Mahasiswa tidak memberikan jawaban verbal.";
 
         if (currentPhase === 'presentation') {
@@ -327,10 +327,13 @@ export default function DashboardUjian() {
         mediaRecorderRef.current = null; 
       };
 
-      mediaRecorder.start(1000); 
+      try {
+        if (mediaRecorder.state === "inactive") {
+          mediaRecorder.start(1000); 
+        }
+      } catch (error) {}
     }
 
-    // B. SAKLAR DETEKSI SUARA VERBAL (AUTO NEXT JIKA BICARA SELESAI)
     if (shouldListen.current) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -352,7 +355,6 @@ export default function DashboardUjian() {
              setUserTranscript(teksLengkap); 
           }
           
-          // Auto trigger jika mendengar kalimat penutup
           if (
             (phase === 'presentation' && (teksLengkap.includes('sekian presentasi') || teksLengkap.includes('presentasi dari saya'))) ||
             (phase.startsWith('answering_') && (teksLengkap.includes('sekian jawaban') || teksLengkap.includes('jawaban saya')))
@@ -367,9 +369,7 @@ export default function DashboardUjian() {
           }
         };
         recognition.onerror = (e) => {
-          if (e.error !== 'no-speech') {
-             console.log("Speech recognition error:", e.error);
-          }
+          if (e.preventDefault) e.preventDefault();
         };
 
         try { recognition.start(); } catch(e){}
@@ -405,14 +405,13 @@ export default function DashboardUjian() {
     };
   }, [isVideoOn]);
 
-  // Menentukan indeks pertanyaan untuk Pop-up aktif
   let activeQuestionIndex = -1;
   if (phase.includes('_1') || phase === 'answering_1') activeQuestionIndex = 0;
   if (phase.includes('_2') || phase === 'answering_2') activeQuestionIndex = 1;
   if (phase.includes('_3') || phase === 'answering_3') activeQuestionIndex = 2;
 
   return (
-    <div className="h-screen w-full bg-[#050012] flex flex-col p-4 font-sans text-white overflow-hidden relative" style={{ background: "linear-gradient(160deg, #f0f8ff 0%, #e1f0fd 25%, #dbeeff 55%, #edf6ff 100%)" }}>
+    <div className="h-screen w-full flex flex-col p-4 md:p-6 font-sans text-slate-800 overflow-hidden relative" style={{ background: "linear-gradient(160deg, #f0f8ff 0%, #e1f0fd 25%, #dbeeff 55%, #edf6ff 100%)" }}>
       
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full" style={{ background: "radial-gradient(circle, rgba(147,197,253,0.25) 0%, transparent 70%)" }} />
@@ -447,7 +446,7 @@ export default function DashboardUjian() {
           </div>
           <h1 className="font-bold text-lg text-slate-800">Skripsivibe AI</h1>
         </div>
-        <button className="p-2 rounded-xl bg-white/60 border border-blue-200/50 backdrop-blur-xl text-slate-700 hover:bg-white/80 transition">
+        <button className="p-2 rounded-xl bg-white/60 border border-blue-200/50 backdrop-blur-xl text-slate-700 hover:bg-white/80 transition shadow-sm">
           <Maximize size={18} />
         </button>
       </div>
@@ -478,19 +477,19 @@ export default function DashboardUjian() {
           </div>
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-900/90 to-transparent pointer-events-none z-20"></div>
 
-          <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-xl flex items-center gap-2 border border-blue-100 shadow-lg z-30">
-            <Volume2 size={14} className={isAiSpeaking || (!videoRefs.current[activeVideo]?.muted && activeVideo) ? "text-sky-500" : "text-slate-400"} />
+          <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl flex items-center gap-2 border border-blue-100 shadow-sm z-30">
+            <Volume2 size={14} className={isAiSpeaking || (!videoRefs.current[activeVideo]?.muted && activeVideo) ? "text-blue-500" : "text-slate-400"} />
             {isAiSpeaking || (!videoRefs.current[activeVideo]?.muted && activeVideo) ? (
               <div className="flex gap-[2px] items-center h-3">
-                <div className="w-[2px] bg-sky-500 rounded-full h-full animate-pulse"></div>
-                <div className="w-[2px] bg-sky-500 rounded-full h-1/2 animate-pulse"></div>
-                <div className="w-[2px] bg-sky-500 rounded-full h-3/4 animate-pulse"></div>
+                <div className="w-[2px] bg-blue-500 rounded-full h-full animate-pulse"></div>
+                <div className="w-[2px] bg-blue-500 rounded-full h-1/2 animate-pulse"></div>
+                <div className="w-[2px] bg-blue-500 rounded-full h-3/4 animate-pulse"></div>
               </div>
             ) : <div className="w-4 h-[2px] bg-slate-400 rounded-full"></div>}
           </div>
 
-          <div className="absolute bottom-4 left-4 bg-white/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-blue-100 shadow-lg z-30">
-            <span className="text-slate-700 text-sm font-semibold">Prof. Budi (Dosen AI)</span>
+          <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-blue-100 shadow-sm z-30">
+            <span className="text-slate-700 text-sm font-bold">Prof. Budi (Dosen AI)</span>
           </div>
         </div>
 
@@ -503,82 +502,84 @@ export default function DashboardUjian() {
 
           <div className="absolute inset-0 flex items-center justify-center z-0">
             {cameraStatus === "loading" && isVideoOn && (
-              <div className="flex flex-col items-center gap-3 text-slate-500"><Loader2 size={40} className="animate-spin text-sky-500" /><p className="text-sm font-medium">Meminta akses kamera...</p></div>
+              <div className="flex flex-col items-center gap-3 text-slate-500"><Loader2 size={40} className="animate-spin text-blue-500" /><p className="text-sm font-medium">Meminta akses kamera...</p></div>
             )}
             {cameraStatus === "denied" && isVideoOn && (
               <div className="flex flex-col items-center gap-3 text-red-500 bg-red-500/10 p-6 rounded-2xl border border-red-500/20 text-center mx-4 max-w-md"><CameraOff size={40} /><p className="text-sm font-medium">Akses kamera ditolak</p></div>
             )}
             {!isVideoOn && (
               <div className="flex flex-col items-center gap-3 text-slate-500">
-                <div className="w-24 h-24 rounded-full bg-slate-200/50 flex items-center justify-center shadow-inner"><CameraOff size={32} className="text-slate-400" /></div>
-                <p className="text-sm font-medium text-slate-400">Kamera Dimatikan</p>
+                <div className="w-24 h-24 rounded-full bg-white/50 border border-blue-100 flex items-center justify-center shadow-inner"><CameraOff size={32} className="text-slate-400" /></div>
+                <p className="text-sm font-bold text-slate-500">Kamera Dimatikan</p>
               </div>
             )}
           </div>
 
           <div className="absolute top-4 left-4 flex flex-col gap-3 z-20">
-            {/* TIMER */}
+            {/* INDIKATOR REC & TIMER (Timer disembunyikan saat QnA) */}
             <div className="flex items-center gap-3">
-              <div className="bg-white/80 backdrop-blur-md border border-red-200 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-sm">
+              <div className="bg-white/90 backdrop-blur-md border border-red-200 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-sm">
                 <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 <span className="text-red-500 text-xs md:text-sm font-bold tracking-wider">REC</span>
               </div>
-              <div className="bg-white/80 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 border border-blue-200/50">
-                <span className="font-mono text-xs md:text-sm font-bold tracking-widest text-slate-700">
-                  Timer {formatTime(time)}
-                  <span className="text-slate-400 text-black"> / </span>
-                  <span className="text-slate-400 text-black">10:00</span>
-                </span>
-              </div>
+              {phase === 'presentation' && (
+                <div className="bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-sm flex items-center gap-2 border border-blue-100">
+                  <span className="font-mono text-xs md:text-sm font-bold tracking-widest text-slate-700">
+                    {formatTime(time)}
+                    <span className="text-slate-400"> / 10:00</span>
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* BOX PETUNJUK USER */}
             {phase === 'presentation' && (
-              <div className="bg-blue-50/95 backdrop-blur-md border border-blue-200 px-4 py-3 rounded-2xl shadow-xl w-max flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 mt-1">
+              <div className="bg-white/95 backdrop-blur-md border border-blue-200 px-4 py-3 rounded-2xl shadow-xl w-max flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 mt-1">
                 <div className="flex items-center gap-2">
                   <Mic size={16} className={shouldListen.current ? "text-blue-500 animate-pulse" : "text-slate-400"} />
-                  <span className="text-slate-700 text-xs font-bold tracking-wider uppercase">Petunjuk Presentasi:</span>
+                  <span className="text-blue-600 text-xs font-bold tracking-wider uppercase">Petunjuk Presentasi:</span>
                 </div>
-                <p className="text-slate-600 text-xs pl-6">
-                  Ucapkan kata <span className="font-bold text-blue-700">"Sekian presentasi dari saya"</span> jika sudah selesai,<br/>
-                  atau langsung klik tombol <span className="font-bold text-blue-700">Selesai Presentasi</span> di pojok bawah.
+                <p className="text-slate-600 text-xs pl-6 font-medium">
+                  Ucapkan <span className="font-bold text-blue-600">"Sekian presentasi dari saya"</span> jika sudah selesai,<br/>
+                  atau langsung klik tombol <span className="font-bold text-blue-600">Selesai Presentasi</span> di pojok bawah.
                 </p>
               </div>
             )}
 
             {phase.startsWith('answering_') && (
-              <div className="bg-emerald-50/95 backdrop-blur-md border border-emerald-200 px-4 py-3 rounded-2xl shadow-xl w-max flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 mt-1">
+              <div className="bg-white/95 backdrop-blur-md border border-sky-200 px-4 py-3 rounded-2xl shadow-xl w-max flex flex-col gap-1 animate-in fade-in slide-in-from-top-2 mt-1">
                 <div className="flex items-center gap-2">
-                  <Mic size={16} className={shouldListen.current ? "text-emerald-500 animate-pulse" : "text-slate-400"} />
-                  <span className="text-slate-700 text-xs font-bold tracking-wider uppercase">Petunjuk Menjawab:</span>
+                  <Mic size={16} className={shouldListen.current ? "text-sky-500 animate-pulse" : "text-slate-400"} />
+                  <span className="text-sky-600 text-xs font-bold tracking-wider uppercase">Petunjuk Menjawab:</span>
                 </div>
-                <p className="text-slate-600 text-xs pl-6">
-                  Ucapkan kata <span className="font-bold text-emerald-700">"Sekian jawaban saya"</span> jika sudah selesai,<br/>
-                  atau langsung klik tombol <span className="font-bold text-emerald-700">Selesai Menjawab</span> di pojok bawah.
+                <p className="text-slate-600 text-xs pl-6 font-medium">
+                  Ucapkan <span className="font-bold text-sky-600">"Sekian jawaban saya"</span> jika sudah selesai,<br/>
+                  atau langsung klik tombol <span className="font-bold text-sky-600">Selesai Menjawab</span> di pojok bawah.
                 </p>
               </div>
             )}
 
-            {/* 🚀 POP-UP PERTANYAAN DOSEN AKTIF (GLASSMORPHISM) */}
+            {/* POP-UP PERTANYAAN DOSEN AKTIF (GLASSMORPHISM LIGHT THEME) */}
             {activeQuestionIndex !== -1 && (
-              <div className="bg-slate-900/75 border border-white/20 backdrop-blur-md p-5 rounded-2xl shadow-2xl max-w-sm mt-3 animate-in fade-in slide-in-from-top-4">
+              <div className="bg-white/95 border border-blue-200 backdrop-blur-xl p-5 rounded-2xl shadow-xl max-w-sm mt-3 animate-in fade-in slide-in-from-top-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare size={16} className="text-sky-400" />
-                  <p className="text-sky-400 text-xs font-bold uppercase tracking-wider">Pertanyaan {activeQuestionIndex + 1}</p>
+                  <MessageSquare size={16} className="text-blue-500" />
+                  <p className="text-blue-500 text-xs font-bold uppercase tracking-wider">Pertanyaan {activeQuestionIndex + 1}</p>
                 </div>
-                <p className="text-white text-sm leading-relaxed font-semibold">
+                <p className="text-slate-800 text-sm leading-relaxed font-bold">
                   "{generatedQuestions[activeQuestionIndex]}"
                 </p>
               </div>
             )}
           </div>
 
-          {/* 🚀 TOMBOL MANUAL INPUT POJOK KIRI BAWAH */}
+          {/* TOMBOL MANUAL INPUT POJOK KIRI BAWAH */}
           <div className="absolute bottom-6 left-6 z-50">
             {phase === "presentation" && (
               <button 
                 onClick={handleManualNextPhase} 
-                className="bg-blue-600/90 hover:bg-blue-600 border border-blue-400 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 font-bold transition-all hover:scale-105"
+                className="text-white px-5 py-3 rounded-2xl flex items-center gap-2 font-bold transition-all hover:scale-105"
+                style={{ background: "linear-gradient(135deg, #2563eb, #0ea5e9)", boxShadow: "0 8px 20px rgba(59,130,246,0.3)" }}
               >
                 <CheckCircle2 size={20} />
                 Selesai Presentasi
@@ -587,25 +588,26 @@ export default function DashboardUjian() {
             {phase.startsWith('answering_') && (
               <button 
                 onClick={handleManualNextPhase} 
-                className="bg-emerald-600/90 hover:bg-emerald-600 border border-emerald-400 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2 font-bold transition-all hover:scale-105"
+                className="text-white px-5 py-3 rounded-2xl flex items-center gap-2 font-bold transition-all hover:scale-105"
+                style={{ background: "linear-gradient(135deg, #2563eb, #0ea5e9)", boxShadow: "0 8px 20px rgba(59,130,246,0.3)" }}
               >
                 <CheckCircle2 size={20} />
                 Selesai Menjawab
               </button>
             )}
             {phase === "finished" && (
-              <div className="bg-slate-800/80 backdrop-blur-md border border-slate-600 px-4 py-2 rounded-xl shadow-lg">
-                <span className="text-white text-xs font-bold tracking-wider">UJIAN SELESAI</span>
+              <div className="bg-white/90 backdrop-blur-md border border-blue-200 px-4 py-2 rounded-xl shadow-sm">
+                <span className="text-blue-600 text-xs font-bold tracking-wider">UJIAN SELESAI</span>
               </div>
             )}
           </div>
 
           {/* CONTROL CAMERA & MIC */}
           <div className="absolute bottom-5 right-5 md:bottom-6 md:right-6 z-50 flex items-center gap-3">
-            <button onClick={() => setIsVideoOn(!isVideoOn)} className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center transition-all backdrop-blur-xl border shadow-[0_10px_30px_rgba(59,130,246,0.15)] ${isVideoOn ? "bg-white/80 border-blue-200/50 text-slate-700" : "bg-red-500/10 border-red-500/50 text-red-500"}`}>
+            <button onClick={() => setIsVideoOn(!isVideoOn)} className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center transition-all backdrop-blur-xl border shadow-[0_10px_30px_rgba(59,130,246,0.15)] ${isVideoOn ? "bg-white/90 border-blue-200 text-slate-700 hover:bg-white" : "bg-red-50 text-red-500 border-red-200"}`}>
               {isVideoOn ? <Video size={22} /> : <CameraOff size={22} />}
             </button>
-            <button onClick={() => setIsMicOn(!isMicOn)} className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center transition-all backdrop-blur-xl border shadow-[0_10px_30px_rgba(59,130,246,0.15)] ${isMicOn ? "bg-white/80 border-blue-200/50 text-slate-700" : "bg-red-500/10 border-red-500/50 text-red-500"}`}>
+            <button onClick={() => setIsMicOn(!isMicOn)} className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center transition-all backdrop-blur-xl border shadow-[0_10px_30px_rgba(59,130,246,0.15)] ${isMicOn ? "bg-white/90 border-blue-200 text-slate-700 hover:bg-white" : "bg-red-50 text-red-500 border-red-200"}`}>
               {isMicOn ? <Mic size={22} /> : <MicOff size={22} />}
             </button>
           </div>

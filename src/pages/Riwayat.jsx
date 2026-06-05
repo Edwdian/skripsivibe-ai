@@ -24,11 +24,23 @@ const Riwayat = () => {
     fetchData();
   }, []);
 
-  const filtered = simulations.filter((item) =>
-    item.judul?.toLowerCase().includes(search.toLowerCase())
-  );
-
   const safeSimulations = Array.isArray(simulations) ? simulations : [];
+
+  
+  const filtered = safeSimulations.filter((item) => {
+    const searchTerm = search.toLowerCase();
+
+    const judul = (item.judul || "Simulasi Sidang").toLowerCase();
+    const mode = (item.mode || "").toLowerCase();
+    const grade = (item.grade || "").toLowerCase();
+
+    return (
+      judul.includes(searchTerm) ||
+      mode.includes(searchTerm) ||
+      grade.includes(searchTerm)
+    );
+  });
+
   const totalMenit = Math.round(
     safeSimulations.reduce((acc, s) => acc + (s.durasi || 0), 0) / 60
   );
@@ -130,12 +142,12 @@ const Riwayat = () => {
         <Search size={16} className="text-slate-400" />
         <input
           type="text"
-          placeholder="Cari berdasarkan judul skripsi..."
+          placeholder="Cari judul skripsi, mode, atau grade (A/B/C)..." 
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 bg-transparent outline-none text-sm text-slate-700 placeholder-slate-400"
         />
-        <Filter size={16} className="text-slate-400" />
+        <Filter size={16} className="text-slate-400 cursor-pointer hover:text-blue-500 transition-colors" />
       </div>
 
       {/* List Riwayat */}

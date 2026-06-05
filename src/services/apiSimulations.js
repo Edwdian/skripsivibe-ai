@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000/api/simulations";
+const API_URL = "https://skripsivibe-backend.onrender.com/api/simulations";
 
 export const saveSimulation = async (data) => {
   try {

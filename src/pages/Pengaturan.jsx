@@ -57,24 +57,55 @@ const Pengaturan = () => {
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { alert("Format foto tidak didukung! Gunakan JPG, PNG, atau WebP."); return; }
-    if (file.size > 2 * 1024 * 1024) { alert("Ukuran foto maksimal 2MB!"); return; }
-    if (file.size < 10 * 1024) { alert("Ukuran foto terlalu kecil! Minimal 10KB."); return; }
+    
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { 
+      alert("Format foto tidak didukung! Gunakan JPG, PNG, atau WebP."); 
+      e.target.value = ""; // Reset input
+      return; 
+    }
+    if (file.size > 2 * 1024 * 1024) { 
+      alert("Ukuran foto maksimal 2MB!"); 
+      e.target.value = ""; // Reset input
+      return; 
+    }
+    if (file.size < 10 * 1024) { 
+      alert("Ukuran foto terlalu kecil! Minimal 10KB."); 
+      e.target.value = ""; // Reset input
+      return; 
+    }
+    
     setPhotoLoading(true);
+    
     try {
-      const storage = getStorage();
       const user = auth.currentUser;
+      if (!user) throw new Error("Pengguna belum terautentikasi.");
+
+      const storage = getStorage();
       const storageRef = ref(storage, `profile_photos/${user.uid}`);
+      
+      // Upload ke Firebase Storage
       await uploadBytes(storageRef, file);
+      
+      // Dapatkan URL gambar
       const downloadURL = await getDownloadURL(storageRef);
-      await updateProfile(user, { photoURL: downloadURL });
-      await setDoc(doc(db, "users", user.uid), { photoURL: downloadURL }, { merge: true });
-      setUserProfile((prev) => ({ ...prev, photoURL: downloadURL }));
-      setEditFormData((prev) => ({ ...prev, photoURL: downloadURL }));
+      
+      // Trik agar React langsung mereload gambar walaupun URL-nya sama (melewati cache browser)
+      const newPhotoURL = `${downloadURL}&t=${Date.now()}`;
+
+      // Update di Auth & Firestore
+      await updateProfile(user, { photoURL: newPhotoURL });
+      await setDoc(doc(db, "users", user.uid), { photoURL: newPhotoURL }, { merge: true });
+      
+      // Update State UI
+      setUserProfile((prev) => ({ ...prev, photoURL: newPhotoURL }));
+      setEditFormData((prev) => ({ ...prev, photoURL: newPhotoURL }));
+      
     } catch (error) {
-      alert("Gagal upload foto: " + error.message);
+      console.error("Error upload foto:", error);
+      alert(`Gagal upload foto: ${error.message}\n\nPastikan Firebase Storage sudah Anda aktifkan di Firebase Console!`);
     } finally {
       setPhotoLoading(false);
+      e.target.value = ""; // Reset file input agar bisa klik file yang sama lagi
     }
   };
 
@@ -362,7 +393,7 @@ const Pengaturan = () => {
               {[
                 { label: "Versi Aplikasi", value: "v1.0.0 (Beta)" },
                 { label: "Tahun Pengembangan", value: "2026" },
-                { label: "Tim Developer", value: "Tim Fullstack SkripsiVibe AI" },
+                { label: "Tim Developer", value: "AI Engineer, Data Science, & Fullstack" },
               ].map((item, i) => (
                 <div key={i} className="flex items-center justify-between py-3 px-4 rounded-2xl"
                   style={{ background: "rgba(239,246,255,0.6)", border: "1px solid rgba(219,234,254,0.7)" }}>
