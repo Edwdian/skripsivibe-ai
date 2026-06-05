@@ -129,7 +129,7 @@ export default function LandingPage() {
               <button onClick={() => scrollToSection("beranda")} className="hover:text-blue-600 transition-colors">Beranda</button>
               <button onClick={() => scrollToSection("cara-kerja")} className="hover:text-blue-600 transition-colors">Cara Kerja</button>
               <button onClick={() => scrollToSection("fitur-evaluasi")} className="hover:text-blue-600 transition-colors">Fitur Evaluasi</button>
-              <button onClick={() => scrollToSection("demo")} className="hover:text-blue-600 transition-colors">Demo</button>
+              {/* <button onClick={() => scrollToSection("demo")} className="hover:text-blue-600 transition-colors">Demo</button> */}
               <button onClick={() => scrollToSection("faq")} className="hover:text-blue-600 transition-colors">FAQ</button>
             </div>
           </div>
@@ -396,7 +396,7 @@ export default function LandingPage() {
 
             </div>
 
-            {/* DEMO APLIKASI */}
+            {/* DEMO APLIKASI
             <div id="demo" className="w-full mt-40 relative flex flex-col items-center z-30 pt-10">
               <h2 className="text-3xl md:text-5xl font-bold mb-10 text-slate-800 tracking-tight">Lihat Bagaimana AI Bekerja</h2>
               <div className="relative w-full max-w-5xl p-2 md:p-3 rounded-2xl md:rounded-[2rem] bg-white/60 backdrop-blur-lg border border-blue-200 shadow-2xl">
@@ -409,7 +409,7 @@ export default function LandingPage() {
                   ></iframe>
                 </div>
               </div>
-            </div>
+            </div> */}
 
             {/* STATEMENT REVEAL*/}
             <section className="relative w-full z-20 flex justify-center mt-40 mb-24 px-6">

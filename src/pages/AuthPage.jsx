@@ -102,8 +102,6 @@ export default function AuthPage() {
   const [otpError, setOtpError] = useState("");
   const [verifyError, setVerifyError] = useState("");
 
-  // Polling: cek apakah email sudah diverifikasi setiap 3 detik
-  // saat mode === "verify-email"
   useEffect(() => {
     if (mode !== "verify-email") return;
     const interval = setInterval(async () => {
@@ -123,6 +121,15 @@ export default function AuthPage() {
   }, [mode]);
 
   const isValidGmail = (e) => e?.toLowerCase().trim().endsWith("@gmail.com");
+
+  useEffect(() => {
+    const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+    link.type = 'image/png';
+    link.rel = 'icon';
+    link.href = 'https://res.cloudinary.com/doabehyrn/image/upload/v1780575299/skripsivibeai-logo_gdzxnq.png';
+    document.getElementsByTagName('head')[0].appendChild(link);
+    document.title = "Autentikasi - Skripsivibe AI";
+  }, []);
 
   useEffect(() => {
     if (mode === "otp") {
