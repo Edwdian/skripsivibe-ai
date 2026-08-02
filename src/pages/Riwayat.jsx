@@ -114,21 +114,21 @@ const Riwayat = () => {
 
       {/* Statistik Ringkas */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
+        <div className="rounded-2xl p-5 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-lg" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
           <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center mb-3">
             <FileText className="text-blue-400" size={18} />
           </div>
           <p className="text-slate-400 text-xs">Total Simulasi</p>
           <h3 className="text-2xl font-bold text-slate-800 mt-1">{simulations.length}</h3>
         </div>
-        <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
+        <div className="rounded-2xl p-5 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-lg" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
           <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center mb-3">
             <Award className="text-emerald-500" size={18} />
           </div>
           <p className="text-slate-400 text-xs">Nilai Rata-rata</p>
           <h3 className="text-2xl font-bold text-slate-800 mt-1">{nilaiRata !== null ? nilaiRata : "-"}</h3>
         </div>
-        <div className="rounded-2xl p-5 col-span-2 md:col-span-1" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
+        <div className="rounded-2xl p-5 col-span-2 md:col-span-1 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-lg" style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.35)" }}>
           <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center mb-3">
             <Clock className="text-sky-400" size={18} />
           </div>
@@ -172,7 +172,8 @@ const Riwayat = () => {
           {filtered.map((item) => (
             <div
               key={item.id}
-              className="rounded-2xl p-6 transition-all hover:shadow-md"
+              onClick={() => setSelectedItem(item)}
+              className="rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_12px_25px_rgba(59,130,246,0.15)] cursor-pointer"
               style={{ background: "rgba(255,255,255,0.72)", backdropFilter: "blur(16px)", border: "1px solid rgba(147,197,253,0.4)", boxShadow: "0 8px 24px rgba(15,23,42,0.06)" }}
             >
               <div className="flex flex-col md:flex-row justify-between gap-6">
@@ -211,7 +212,6 @@ const Riwayat = () => {
                     <span className="text-[10px] font-bold text-slate-400">{item.nilai || "-"}</span>
                   </div>
                   <button
-                    onClick={() => setSelectedItem(item)}
                     className="w-10 h-10 rounded-full flex items-center justify-center text-slate-400 transition"
                     style={{ background: "rgba(219,234,254,0.6)", border: "1px solid rgba(147,197,253,0.4)" }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "linear-gradient(135deg, #3b82f6, #0ea5e9)")}

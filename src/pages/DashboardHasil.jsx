@@ -1,4 +1,4 @@
-import React, { useState,  useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import {
   Trophy,
@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   Sparkles,
   ChevronRight,
-  Download,
   Percent,
   MessageSquare,
   ChevronDown,
@@ -53,12 +52,7 @@ export default function DashboardHasil() {
   // 1. TANGKAP DATA DARI HALAMAN UJIAN
   // ==========================================
   const rawHasilAI = location.state?.hasilAI || {};
-  const hasilAI = rawHasilAI.presentasi || rawHasilAI || {
-    kesesuaian_skripsi_persen: 0,
-    skor_percaya_diri_persen: 0,
-    status_psikologis: "Gugup / Panik",
-    status_pemahaman: "Gak Paham"
-  };
+  const dataHuggingFace = rawHasilAI.evaluasi_ai || {};
 
   const transkrip = location.state?.transkrip || {
     presentasi_transcript: "Transkrip tidak ditemukan.",
@@ -81,26 +75,73 @@ export default function DashboardHasil() {
     strategi: []
   };
 
-  // ==========================================
-  // 🎓 LOGIKA KONVERSI NILAI AKADEMIS
-  // ==========================================
-  const raw_materi = hasilAI.kesesuaian_skripsi_persen || 0;
-  const status_paham = hasilAI.status_pemahaman || "Gak Paham";
-  const status_pede = hasilAI.status_psikologis || "Gugup / Panik";
-  const p_pede = Math.round(hasilAI.skor_percaya_diri_persen || 0);
+  // 🔥 MENGAMBIL Teks FEEDBACK PRESENTASI GEMINI (TANPA SKOR LOGIKA)
+  const evaluasiPresentasiGemini = hasilQnaData.evaluasi_presentasi || {};
+  const feedbackPresentasiGemini = evaluasiPresentasiGemini.feedback || "";
 
-  let p_materi = 0;
-  if (status_paham.includes("TIDAK NYAMBUNG")) {
-    p_materi = Math.min(Math.round(raw_materi), 20); 
-  } else if (status_paham === "Sangat Paham") {
-    p_materi = 85 + Math.min(Math.round(raw_materi), 15); 
-  } else if (status_paham === "Lumayan Paham") {
-    p_materi = 70 + Math.min(Math.round(raw_materi), 14); 
+  const isOutOfTopic = rawHasilAI.status_akhir && rawHasilAI.status_akhir.includes("TIDAK NYAMBUNG");
+  
+  // Ambil skor dinamis langsung dari backend
+  let p_materi = Math.round(dataHuggingFace.skor_pemahaman_persen || 0);
+  let status_paham = "Sangat Tidak Paham";
+
+  if (isOutOfTopic) {
+    status_paham = "Sangat Tidak Paham";
+    p_materi = 15; // Fix skor minimum jika skripsi tidak nyambung
   } else {
-    p_materi = 40 + Math.min(Math.round(raw_materi), 29); 
+    // Tentukan label UI berdasarkan rentang skor dinamis yang asli
+    if (p_materi >= 85) {
+      status_paham = "Sangat Paham";
+    } else if (p_materi >= 70) {
+      status_paham = "Paham";
+    } else {
+      status_paham = "Sangat Tidak Paham";
+    }
   }
 
-  const p_qna = qnaSummary.skor_rata_rata || 0;
+  // ==========================================
+  // 3. PENENTUAN SKOR PERCAYA DIRI (100% COLAB / LSTM)
+  // ==========================================
+  // Komposisi 3 Level Percaya Diri
+  const p_pede = Math.round(dataHuggingFace.skor_percaya_diri_persen || 0);
+  let status_pede = "Tidak Percaya Diri";
+  
+  if (p_pede >= 80) status_pede = "Sangat Percaya Diri";
+  else if (p_pede >= 60) status_pede = "Percaya Diri";
+  else status_pede = "Tidak Percaya Diri";
+
+  let skorQnaDariAPI = qnaSummary.skor_rata_rata || 0;
+
+  if (skorQnaDariAPI === 0 && qnaList.length > 0) {
+    let totalPoin = 0;
+    let jumlahSoalValid = 0;
+
+    qnaList.forEach(item => {
+      const statusText = (item.status || "").toLowerCase();
+      
+      if (statusText.includes("benar")) {
+        totalPoin += 100;
+      } else if (statusText.includes("kurang")) {
+        totalPoin += 50;
+      } else if (statusText.includes("salah")) {
+        totalPoin += 0;
+      }
+
+      // Hitung soal asalkan statusnya bukan default "-"
+      if (statusText !== "-" && statusText !== "") {
+        jumlahSoalValid++;
+      }
+    });
+
+    if (jumlahSoalValid > 0) {
+      skorQnaDariAPI = Math.round(totalPoin / jumlahSoalValid);
+    }
+  }
+
+  // Batasi persentase agar maksimal 100% dan minimal 0%
+  const p_qna = Math.min(100, Math.max(0, skorQnaDariAPI));
+
+  // Kalkulasi Akhir
   const skor_presentasi = Math.round((p_materi * 0.6) + (p_pede * 0.4));
   const skor_akhir = Math.round((skor_presentasi * 0.6) + (p_qna * 0.4));
 
@@ -113,72 +154,20 @@ export default function DashboardHasil() {
   else if (skor_akhir >= 80) { grade_akhir = "A-"; grade_color = "text-emerald-500"; grade_bg = "border-emerald-300 bg-emerald-50/50"; }
   else if (skor_akhir >= 75) { grade_akhir = "B+"; grade_color = "text-blue-500"; grade_bg = "border-blue-300 bg-blue-50/50"; }
   else if (skor_akhir >= 70) { grade_akhir = "B"; grade_color = "text-blue-500"; grade_bg = "border-blue-300 bg-blue-50/50"; }
-  else if (skor_akhir >= 65) { grade_akhir = "C+"; grade_color = "text-slate-600"; grade_bg = "border-slate-300 bg-slate-50/50"; } // Menggunakan silver/gray gradient concept
+  else if (skor_akhir >= 65) { grade_akhir = "C+"; grade_color = "text-slate-600"; grade_bg = "border-slate-300 bg-slate-50/50"; } 
   else if (skor_akhir >= 60) { grade_akhir = "C"; grade_color = "text-slate-600"; grade_bg = "border-slate-300 bg-slate-50/50"; }
   else { grade_akhir = "D"; grade_color = "text-red-500"; grade_bg = "border-red-400 bg-red-50/50"; }
 
-  // FUNGSI DOWNLOAD TRANSKRIP
-  // const handleDownloadTranscript = () => {
-  //   const textContent = `=== TRANSKRIP SIMULASI SIDANG AI ===\n\n` +
-  //     `[PRESENTASI MAHASISWA]\n${transkrip.presentasi_transcript}\n\n` +
-  //     `[JAWABAN QNA 1]\n${transkrip.jawaban_1}\n\n` +
-  //     `[JAWABAN QNA 2]\n${transkrip.jawaban_2}\n\n` +
-  //     `[JAWABAN QNA 3]\n${transkrip.jawaban_3}\n`;
-
-  //   const blob = new Blob([textContent], { type: "text/plain" });
-  //   const url = URL.createObjectURL(blob);
-    
-  //   const link = document.createElement("a");
-  //   link.href = url;
-  //   link.download = "Transkrip_Sidang_Skripsivibe.txt";
-  //   document.body.appendChild(link);
-  //   link.click(); 
-    
-  //   document.body.removeChild(link);
-  //   URL.revokeObjectURL(url);
-  // };
-
-  // ==========================================
-  // 🚀 LOGIKA FEEDBACK GABUNGAN
-  // ==========================================
   const getDynamicFeedback = () => {
     let presUnggul = [];
     let presLemah = [];
-    let presStrategi = [];
 
-    if (status_paham.includes("TIDAK NYAMBUNG")) {
-      presUnggul = ["Keberanian untuk mencoba presentasi dan menghadapi simulasi."];
-      presLemah = ["Materi presentasi melenceng jauh dari isi dokumen skripsi.", "Pemahaman konteks penelitian secara keseluruhan kurang."];
-      presStrategi = ["Baca ulang dan pahami inti sari draft skripsi Anda.", "Gunakan kata kunci utama penelitian secara konsisten."];
-    } else if (status_paham === "Sangat Paham") {
-      if (status_pede === "Percaya Diri") {
-        presUnggul = ["Penyampaian materi sangat jelas, runtut, dan terstruktur.", "Tingkat kepercayaan diri tinggi, menunjukkan penguasaan matang."];
-        presLemah = ["Secara keseluruhan performa sudah sangat baik, tinggal menjaga konsistensi."];
-        presStrategi = ["Perbanyak simulasi tanya jawab spontan untuk sidang asli."];
+    // Mengelompokkan teks feedback Gemini berdasarkan skor materi Colab
+    if (feedbackPresentasiGemini) {
+      if (p_materi >= 70) {
+        presUnggul.push(`[Catatan Presentasi] ${feedbackPresentasiGemini}`);
       } else {
-        presUnggul = ["Penguasaan materi dan landasan teori sudah sangat baik."];
-        presLemah = ["Terdeteksi gestur atau nada bicara yang gugup di beberapa bagian."];
-        presStrategi = ["Latihan berbicara mandiri untuk mengevaluasi intonasi."];
-      }
-    } else if (status_paham === "Lumayan Paham") {
-      if (status_pede === "Percaya Diri") {
-        presUnggul = ["Pembawaan tenang, meyakinkan, serta artikulasi yang baik."];
-        presLemah = ["Kedalaman pemahaman metodologi penelitian masih di permukaan."];
-        presStrategi = ["Fokuskan perhatian pada penguatan argumentasi di Bab Metode."];
-      } else {
-        presUnggul = ["Poin dasar materi penelitian berhasil disampaikan."];
-        presLemah = ["Tingkat kepercayaan diri rendah memicu pengulangan kata."];
-        presStrategi = ["Sering melakukan simulasi presentasi mandiri."];
-      }
-    } else {
-      if (status_pede === "Percaya Diri") {
-        presUnggul = ["Pembawaan berani dan tidak menunjukkan rasa takut."];
-        presLemah = ["Gagal menjelaskan esensi utama dari topik penelitian."];
-        presStrategi = ["Hindari melakukan spekulasi atau mengarang argumen."];
-      } else {
-        presUnggul = ["Mampu menyelesaikan seluruh rangkaian tahapan simulasi."];
-        presLemah = ["Tidak menunjukkan penguasaan yang memadai terhadap skripsi."];
-        presStrategi = ["Sangat disarankan untuk mempelajari ulang draf penelitian."];
+        presLemah.push(`[Catatan Presentasi] ${feedbackPresentasiGemini}`);
       }
     }
 
@@ -186,9 +175,17 @@ export default function DashboardHasil() {
     const filterValidQna = (arr) => (arr || []).filter(item => item && !item.includes("Belum ada data"));
 
     return { 
-      unggul: [...formatData(presUnggul, "Presentasi"), ...formatData(filterValidQna(qnaSummary.keunggulan), "QnA")], 
-      lemah: [...formatData(presLemah, "Presentasi"), ...formatData(filterValidQna(qnaSummary.kelemahan), "QnA")], 
-      strategi: [...formatData(presStrategi, "Presentasi"), ...formatData(filterValidQna(qnaSummary.strategi), "QnA")] 
+      unggul: [
+        ...formatData(presUnggul, "Presentasi"), 
+        ...formatData(filterValidQna(qnaSummary.keunggulan), "QnA")
+      ], 
+      lemah: [
+        ...formatData(presLemah, "Presentasi"), 
+        ...formatData(filterValidQna(qnaSummary.kelemahan), "QnA")
+      ], 
+      strategi: [
+        ...formatData(filterValidQna(qnaSummary.strategi), "QnA")
+      ] 
     };
   };
 
@@ -202,9 +199,6 @@ export default function DashboardHasil() {
   const displayedLemah = evaluasiGabungan.lemah.slice(pageIndex.lemah * ITEMS_PER_PAGE, (pageIndex.lemah + 1) * ITEMS_PER_PAGE);
   const displayedStrategi = evaluasiGabungan.strategi.slice(pageIndex.strategi * ITEMS_PER_PAGE, (pageIndex.strategi + 1) * ITEMS_PER_PAGE);
 
-  
-  
-
   useEffect(() => {
     if (!location.state?.hasilAI) return;
     if (sudahDisimpan) return;
@@ -217,22 +211,19 @@ export default function DashboardHasil() {
 
       const judulFile = window.fileSkripsiNama || "Simulasi Skripsi";
       const durasiDetik = location.state?.durasiTotal || 0;
-      
 
       try {
-
-        // CEK DUPLIKAT LANGSUNG KE FIRESTORE
         const dataTersimpan = await getUserSimulations(currentUser.uid);
-        
-        // Validasi: Jika judul dan nilainya persis sama, anggap sudah tersimpan
         const sudahPernahDisimpan = dataTersimpan.some(
-          (s) => s.judul === judulFile && String(s.nilai) === String(skor_akhir)
+          (s) => 
+            String(s.nilai) === String(skor_akhir) && 
+            s.durasi === durasiDetik &&
+            s.p_materi === p_materi
         );
 
         if (sudahPernahDisimpan) {
-          console.log("Simulasi ini sudah pernah disimpan sebelumnya. Mengabaikan duplikasi.");
           setSudahDisimpan(true);
-          return; // Berhenti di sini, jangan panggil saveSimulation lagi
+          return; 
         }
 
         await saveSimulation({
@@ -247,7 +238,6 @@ export default function DashboardHasil() {
           mode: "AI Killer",
           durasi: durasiDetik,
 
-          // ✅ Tambah data lengkap untuk pop up
           p_materi: p_materi,
           p_pede: p_pede,
           p_qna: p_qna,
@@ -274,7 +264,7 @@ export default function DashboardHasil() {
     };
 
     simpanHasil();
-  }, []); // ✅ trigger setelah skor terhitung
+  }, []); 
 
   if (!location.state?.hasilAI) {
     return <Navigate to="/dashboard-user" replace />;
@@ -284,7 +274,7 @@ export default function DashboardHasil() {
     <div className="min-h-screen text-slate-800 font-sans relative overflow-hidden" 
          style={{ background: 'linear-gradient(160deg, #e0f2ff 0%, #cfe8ff 25%, #b9dcff 55%, #d9efff 100%)' }}>
 
-      {/* BACKGROUND BLOBS (Sesuai Landing Page) */}
+      {/* BACKGROUND BLOBS */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{zIndex: 0}}>
         <div className="absolute top-[-8%] left-[-5%] w-[520px] h-[520px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(96,165,250,0.40) 0%, transparent 70%)' }}></div>
         <div className="absolute top-[25%] right-[-8%] w-[600px] h-[600px] rounded-full" style={{ background: 'radial-gradient(circle, rgba(125,211,252,0.32) 0%, transparent 70%)' }}></div>
@@ -304,7 +294,7 @@ export default function DashboardHasil() {
           </div>
         </div>
 
-        {/* CARD UTAMA NILAI (Translucent Glassmorphism) */}
+        {/* CARD UTAMA NILAI */}
         <div className="rounded-[2rem] p-8 md:p-10 shadow-lg border border-blue-200/50" style={{ background: 'rgba(255,255,255,0.75)', backdropFilter: 'blur(16px)' }}>
           <div className="flex flex-col md:flex-row items-center justify-between gap-8">
             <div className="text-center md:text-left">
@@ -316,16 +306,12 @@ export default function DashboardHasil() {
               </p>
             </div>
 
-            {/* SCORE DISPLAY (Clean Layout) */}
             <div className="relative flex flex-col items-center justify-center shrink-0">
-              {/* Lingkaran hanya fokus pada Grade */}
               <div className={`relative w-36 h-36 rounded-full border-[6px] flex items-center justify-center shadow-lg backdrop-blur-sm ${grade_bg}`}>
                 <h2 className={`text-6xl font-black ${grade_color}`}>
                   {grade_akhir}
                 </h2>
               </div>
-              
-              {/* Pill Total Skor di bawah lingkaran */}
               <div className="mt-5 px-6 py-2.5 rounded-full shadow-sm flex items-center gap-2 border border-blue-100" style={{ background: 'rgba(255,255,255,0.9)' }}>
                 <span className="text-slate-500 text-sm font-bold tracking-wide">Total Skor:</span>
                 <span className={`text-lg font-black ${grade_color}`}>{skor_akhir}</span>
@@ -337,7 +323,7 @@ export default function DashboardHasil() {
         {/* STATISTIK UTAMA */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
-          {/* Penguasaan Materi Card */}
+          {/* Penguasaan Materi Card (100% Model Colab) */}
           <div className="rounded-3xl p-6 shadow-md border border-blue-200/50 hover:scale-[1.02] transition-transform" style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)' }}>
             <div className="flex justify-between items-start">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 shadow-inner" style={{ background: 'rgba(219,234,254,0.9)', border: '1px solid rgba(147,197,253,0.3)' }}>
@@ -345,32 +331,36 @@ export default function DashboardHasil() {
               </div>
               <span className={`px-3 py-1 text-[11px] font-bold tracking-wide rounded-full border mt-1 ${
                 status_paham === 'Sangat Paham' ? 'bg-blue-50 text-blue-600 border-blue-200' : 
-                status_paham === 'Lumayan Paham' ? 'bg-white text-slate-500 border-slate-200' : 
+                status_paham === 'Paham' ? 'bg-white text-slate-500 border-slate-200' : 
                 'bg-red-50 text-red-500 border-red-200'
               }`}>
                 {status_paham}
               </span>
             </div>
-            <p className="text-slate-500 text-sm">Kesesuaian Materi (TF-IDF)</p>
+            <p className="text-slate-500 text-sm">
+              Kesesuaian Materi
+            </p>
             <h3 className="text-4xl font-black mt-2 text-slate-800">{p_materi}%</h3>
-            <div className="mt-4 h-2 bg-blue-100/50 rounded-full overflow-hidden">
+            <div className="mt-4 h-2 rounded-full overflow-hidden bg-blue-100/50">
               <div className="h-full rounded-full" style={{ width: `${p_materi}%`, background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)' }} />
             </div>
           </div>
 
-          {/* Kepercayaan Diri Card */}
+          {/* Kepercayaan Diri Card (100% Model Colab) */}
           <div className="rounded-3xl p-6 shadow-md border border-blue-200/50 hover:scale-[1.02] transition-transform" style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)' }}>
             <div className="flex justify-between items-start">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 shadow-inner" style={{ background: 'rgba(219,234,254,0.9)', border: '1px solid rgba(147,197,253,0.3)' }}>
                 <Trophy className="text-blue-500" size={24} />
               </div>
               <span className={`px-3 py-1 text-[11px] font-bold tracking-wide rounded-full border mt-1 ${
-                status_pede === 'Percaya Diri' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-red-50 text-red-500 border-red-200'
+                status_pede === 'Sangat Percaya Diri' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                status_pede === 'Percaya Diri' ? 'bg-blue-50 text-blue-600 border-blue-200' : 
+                'bg-red-50 text-red-500 border-red-200'
               }`}>
                 {status_pede}
               </span>
             </div>
-            <p className="text-slate-500 text-sm">Skor Percaya Diri (Model LSTM)</p>
+            <p className="text-slate-500 text-sm">Skor Percaya Diri</p>
             <h3 className="text-4xl font-black mt-2 text-slate-800">{p_pede}%</h3>
             <div className="mt-4 h-2 bg-blue-100/50 rounded-full overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${p_pede}%`, background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)' }} />
@@ -382,7 +372,7 @@ export default function DashboardHasil() {
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-5 shadow-[0_4px_15px_rgba(59,130,246,0.3)]" style={{ background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)' }}>
               <Percent className="text-white" size={24} />
             </div>
-            <p className="text-slate-500 text-sm">Akurasi Jawaban QnA (Gemini)</p>
+            <p className="text-slate-500 text-sm">Akurasi Jawaban QnA</p>
             <h3 className="text-4xl font-black mt-2 text-slate-800">{p_qna}%</h3>
             <div className="mt-4 h-2 bg-blue-100/50 rounded-full overflow-hidden">
               <div className="h-full rounded-full" style={{ width: `${p_qna}%`, background: 'linear-gradient(135deg, #3b82f6, #0ea5e9)' }} />
@@ -399,8 +389,8 @@ export default function DashboardHasil() {
             <p className="text-sm font-bold text-slate-800 mb-1">Skema Regulasi Penilaian Konteks AI:</p>
             <p className="text-xs text-slate-500 leading-relaxed">
               <span className="font-bold text-emerald-500">Sangat Paham:</span> 85-100% |  
-              <span className="font-bold text-blue-500 ml-2">Lumayan Paham:</span> 70-84% |  
-              <span className="font-bold text-red-500 ml-2">Gak Paham:</span> &lt; 70%. <br className="hidden md:block"/>
+              <span className="font-bold text-blue-500 ml-2">Paham:</span> 70-84% |  
+              <span className="font-bold text-red-500 ml-2">Sangat Tidak Paham:</span> &lt; 70%. <br className="hidden md:block"/>
             </p>
           </div>
         </div>
@@ -432,7 +422,6 @@ export default function DashboardHasil() {
               ))}
             </div>
 
-            {/* Pagination Controls */}
             {totalPagesUnggul > 1 && (
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                 <button 
@@ -473,14 +462,13 @@ export default function DashboardHasil() {
                 <div key={index} className="flex items-start gap-3 rounded-2xl p-4 border border-slate-100 bg-white/60">
                   <ChevronRight className="text-slate-400 mt-0.5 shrink-0" size={16} />
                   <p className="text-slate-500 text-sm leading-relaxed">
-                    <span className="font-bold text-slate-600 mr-1.5">[{item.source}]</span>
+                    <span className={`font-bold mr-1.5 ${item.text.includes('Peringatan Dosen AI') ? 'text-red-500' : 'text-slate-600'}`}>[{item.source}]</span>
                     {item.text}
                   </p>
                 </div>
               ))}
             </div>
 
-            {/* Pagination Controls */}
             {totalPagesLemah > 1 && (
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-100">
                 <button 
@@ -528,7 +516,6 @@ export default function DashboardHasil() {
               ))}
             </div>
 
-            {/* Pagination Controls */}
             {totalPagesStrategi > 1 && (
               <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                 <button 
@@ -563,7 +550,6 @@ export default function DashboardHasil() {
             return (
               <div key={index} className="rounded-3xl p-6 shadow-sm border border-blue-200/50 flex flex-col relative transition-all hover:-translate-y-1 hover:shadow-md" style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)' }}>
                 
-                {/* Badge Status - Sesuai aksen minor */}
                 <div className="absolute top-6 right-6">
                   <span className={`px-4 py-1.5 text-[10px] font-bold tracking-wide uppercase rounded-full border shadow-sm ${
                     isBenar ? 'bg-emerald-50 text-emerald-500 border-emerald-200' :
@@ -576,14 +562,12 @@ export default function DashboardHasil() {
                 
                 <p className="text-slate-400 text-[11px] font-black uppercase tracking-widest mb-4">Pertanyaan {index + 1}</p>
                 
-                {/* Teks Pertanyaan */}
                 <div className="mb-6 pr-20">
                   <p className="text-slate-800 font-bold text-sm leading-relaxed">
                     "{item.soal}"
                   </p>
                 </div>
                 
-                {/* Kotak Feedback Dosen (AI) */}
                 <div className="mt-auto pt-4 border-t border-blue-100 -mx-6 -mb-6 p-6 rounded-b-3xl" style={{ background: 'rgba(219,234,254,0.3)' }}>
                   <p className="text-blue-500 text-[11px] font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
                     <MessageSquare size={14} /> Feedback Dosen AI

@@ -19,15 +19,18 @@ export const fetchQuestionsFromPDF = async (file) => {
 
 export const sendToRenderModel = async (pdfFile, dataLengkap) => {
   try {
-    const HF_API_URL = "https://frameszans-skripsivibe-ai.hf.space/api/prediksi"; 
-    
+    const BACKEND_API_URL = "https://skripsivibe-backend.onrender.com/api/gemini/evaluasi-skripsi";
+        
     const formData = new FormData();
-    const teks_mahasiswa = dataLengkap.presentasi_transcript.trim();
+    
+    // 🔥 PERBAIKAN: Gunakan teks_full (Presentasi + QnA) agar TF-IDF/LSTM menilai semuanya
+    const teks_mahasiswa = dataLengkap.teks_full ? dataLengkap.teks_full.trim() : dataLengkap.presentasi_transcript.trim();
 
-    formData.append("file_skripsi", pdfFile); 
+    // Pastikan nama field 'file' sesuai dengan upload.single('file') di Express
+    formData.append("file", pdfFile); 
     formData.append("teks_mahasiswa", teks_mahasiswa);
 
-    const response = await fetch(HF_API_URL, {
+    const response = await fetch(BACKEND_API_URL, {
       method: "POST",
       body: formData,
     });
@@ -38,48 +41,45 @@ export const sendToRenderModel = async (pdfFile, dataLengkap) => {
     }
 
     const result = await response.json();
-    
     return result;
 
   } catch (error) {
-    console.error("Error API Hugging Face:", error);
+    console.error("Error Evaluasi Skripsi (Express -> Hugging Face):", error);
     throw error;
   }
 };
 
 export const transcribeAudioWithGroq = async (audioBlob) => {
   const formData = new FormData();
+  // Kita hanya perlu mengirim file audio ke backend kita sendiri
   formData.append("file", audioBlob, "audio.webm");
-  formData.append("model", "whisper-large-v3");
-  formData.append("language", "id"); 
-
-  formData.append("prompt", "Berikut adalah presentasi formal simulasi tanya jawab sidang skripsi.");
-  formData.append("temperature", "0");
 
   try {
-    const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    // 🔥 Menembak ke backend Render milikmu sendiri, BUKAN ke api.groq.com
+    const response = await fetch("https://skripsivibe-backend.onrender.com/api/gemini/transcribe-audio", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`, 
-      },
       body: formData
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Groq error response:", data);
-      return "";
+      console.error("Backend Groq error:", data);
+      return ""; // Jika gagal, Frontend akan otomatis memakai Web Speech API (Fallback)
     }
+    
     return data.text || "";
   } catch (error) {
-    console.error("Error Groq:", error);
+    console.error("Error Fetch Backend Transkrip:", error);
     return "";
   }
 };
 
 export const evaluateQna = async (dataLengkap, questions = []) => {
   const formData = new FormData();
+  
+  // 🔥 PERBAIKAN: Kirim transkrip presentasi agar Gemini punya konteks cerita
+  formData.append("presentasi_transcript", dataLengkap.presentasi_transcript || "");
   
   formData.append("pertanyaan_1", questions[0] || "");
   formData.append("jawaban_1", dataLengkap.jawaban_1 || "");
@@ -102,7 +102,6 @@ export const evaluateQna = async (dataLengkap, questions = []) => {
     }
     
     const result = await response.json();
-    
     return result; 
   } catch (error) {
     console.error("Error Evaluasi QnA Express:", error);
